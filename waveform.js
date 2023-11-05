@@ -26,7 +26,7 @@ let hueRange = 90; // 1/3 of the full 360° hue range for a full rainbow
 
 function preload() {
   audio = loadSound("./assets/baiana.mp3");
-  font = loadFont("./assets/Kirvy-Bold.otf");
+  font = loadFont("./assets/Inconsolata-Medium.ttf");
 }
 
 function setup() {
@@ -41,43 +41,43 @@ function setup() {
 
   // Create a slider to control the volume
   volumeSlider = createSlider(0, 1, volume, 0.01);
-  volumeSlider.position(150, 25);
+  volumeSlider.position(200, 25);
   
   // Create a slider to control the dispersal of the waveform
   dispersalSlider = createSlider(1, 3, 1.5, 0.1);
-  dispersalSlider.position(150, 70);
+  dispersalSlider.position(200, 70);
 
   // Create a slider to control the length of the waveform
   lengthSlider = createSlider(1, 100, 10, 5);
-  lengthSlider.position(150, 115);
+  lengthSlider.position(200, 115);
 
   // Create a slider to control the detail of the waveform
   detailSlider = createSlider(1, 20, 18, 1);
-  detailSlider.position(150, 160);
+  detailSlider.position(200, 160);
 
   // Create a slider to control the mean size of the particles
   particleSizeSlider = createSlider(1, 15, 5, 1);
-  particleSizeSlider.position(150, 205);
+  particleSizeSlider.position(200, 205);
 
   // Create a slider to control the dispersal of the particle size
   particleSizeDispSlider = createSlider(-1, 1, 0, 0.1);
-  particleSizeDispSlider.position(150, 250);
+  particleSizeDispSlider.position(200, 250);
 
   // Create a sider to control the ring size
   ringSizeSlider = createSlider(0.5, 2, 1, 0.1);
-  ringSizeSlider.position(150, 295);
+  ringSizeSlider.position(200, 295);
 
   // Create a slider to control the hue range
   hueSlider = createSlider(0, 360, 90, 1);
-  hueSlider.position(150, 340);
+  hueSlider.position(200, 340);
 
   // Create a slider to control the spacing
   spacingSlider = createSlider(0, 100, 20, 1);
-  spacingSlider.position(150, 385);
+  spacingSlider.position(200, 385);
   
   // Create a button to select a song
   songSelect = createSelect();
-  songSelect.position(150, 450);
+  songSelect.position(200, 450);
   songSelect.option('Baiana', ['baiana']);
   songSelect.option('Carambolage', ['carambolage']);
   songSelect.option('Dexter', ['dexter']);
