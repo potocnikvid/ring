@@ -1,5 +1,6 @@
 let fft;
 let audio;
+let volume = 0.5;
 let easycam;
 let font;
 let waveformHistory = [];
@@ -39,7 +40,7 @@ function setup() {
   textFont(font, 12);
 
   // Create a slider to control the volume
-  volumeSlider = createSlider(0, 1, 0.5, 0.01);
+  volumeSlider = createSlider(0, 1, volume, 0.01);
   volumeSlider.position(150, 25);
   
   // Create a slider to control the dispersal of the waveform
@@ -116,10 +117,13 @@ function keyPressed() {
   } else if (keyCode === RIGHT_ARROW) {
     audio.jump(audio.currentTime() + 5);
   } else if (keyCode === UP_ARROW) {
-    audio.setVolume(audio.getVolume() + 0.1);
-
+    volume += 0.1;
+    audio.setVolume(volume);
+    volumeSlider.value(volume);
   } else if (keyCode === DOWN_ARROW) {
-    audio.setVolume(audio.getVolume() - 0.1);
+    volume -= 0.1;
+    audio.setVolume(volume);
+    volumeSlider.value(volume);
   } else if (keyCode === ENTER) {
     if (audio.isPlaying()) {
       audio.pause();
@@ -162,7 +166,7 @@ function draw() {
   text("Double click to reset view", -width/4+40 , -height/4+420);
 
   // Set the volume based on the slider value
-  let volume = volumeSlider.value()
+  volume = volumeSlider.value()
   audio.setVolume(volume);
 
   // Set the dispersal based on the slider value
