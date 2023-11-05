@@ -14,6 +14,7 @@ let particleSizeDispSlider;
 let ringSizeSlider;
 let hueSlider;
 let spacingSlider;
+let songSelect;
 let width = window.innerWidth;
 let height = window.innerHeight;
 
@@ -23,7 +24,7 @@ let hueRange = 90; // 1/3 of the full 360° hue range for a full rainbow
 
 
 function preload() {
-  audio = loadSound("./assets/rumble.mp3");
+  audio = loadSound("./assets/baiana.mp3");
   font = loadFont("./assets/Kirvy-Bold.otf");
 }
 
@@ -72,6 +73,32 @@ function setup() {
   // Create a slider to control the spacing
   spacingSlider = createSlider(0, 100, 20, 1);
   spacingSlider.position(150, 385);
+  
+  // Create a button to select a song
+  songSelect = createSelect();
+  songSelect.position(150, 450);
+  songSelect.option('Baiana', ['baiana']);
+  songSelect.option('Carambolage', ['carambolage']);
+  songSelect.option('Dexter', ['dexter']);
+  songSelect.option('Drava', ['drava']);
+  songSelect.option('Eventually', ['eventually']);
+  songSelect.option('Gymnopedie', ['gymnopedie']);
+  songSelect.option('Its That Time', ['itsthattime']);
+  songSelect.option('Lost', ['lost']);
+  songSelect.option('Moje Milo', ['mojemilo']);
+  songSelect.option('Not', ['not']);
+  songSelect.option('Neskoncno dolgi objemi', ['objemi']);
+  songSelect.option('Looking at you pager', ['pager']);
+  songSelect.option('Rumble', ['rumble']);
+  songSelect.option('Style', ['style']);
+  songSelect.option('Everybody loves the sunshine', ['sunshine']);
+  songSelect.option('Tobogan', ['tobogan']);
+  songSelect.changed(mySelectEvent);
+}
+function mySelectEvent() {
+  audio.pause();
+  audio = loadSound("./assets/" + songSelect.value() + ".mp3");
+  audio.loop();
 }
 
 function windowResized() {
@@ -122,12 +149,14 @@ function draw() {
   text("Hue Range", -width/4+40 , -height/4+180);
   text("Spacing", -width/4+40 , -height/4+200);
 
-  text("Left Arrow: -5s", -width/4+40 , -height/4+240);
-  text("Right Arrow: +5s", -width/4+40 , -height/4+260);
-  text("Up Arrow: +0.1 Volume", -width/4+40 , -height/4+280);
-  text("Down Arrow: -0.1 Volume", -width/4+40 , -height/4+300);
-  text("Enter: Pause/Play", -width/4+40 , -height/4+320);
-  text("Space: Reset", -width/4+40 , -height/4+340);
+  text("Select song", -width/4+40 , -height/4+240);
+
+  text("Left Arrow: -5s", -width/4+40 , -height/4+260);
+  text("Right Arrow: +5s", -width/4+40 , -height/4+280);
+  text("Up Arrow: +0.1 Volume", -width/4+40 , -height/4+300);
+  text("Down Arrow: -0.1 Volume", -width/4+40 , -height/4+320);
+  text("Enter: Pause/Play", -width/4+40 , -height/4+340);
+  text("Space: Reset", -width/4+40 , -height/4+360);
   text("Click and drag to rotate", -width/4+40 , -height/4+380);
   text("Scroll to zoom", -width/4+40 , -height/4+400);
   text("Double click to reset view", -width/4+40 , -height/4+420);
