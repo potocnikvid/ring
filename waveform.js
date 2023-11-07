@@ -78,8 +78,8 @@ function setup() {
   // Create a button to select a song
   songSelect = createSelect();
   songSelect.position(width/2 - 100,20);
-  songSelect.option('Carambolage', ['carambolage']);
   songSelect.option('Baiana', ['baiana']);
+  songSelect.option('Carambolage', ['carambolage']);
   songSelect.option('Dexter', ['dexter']);
   songSelect.option('Drava', ['drava']);
   songSelect.option('Eventually', ['eventually']);
