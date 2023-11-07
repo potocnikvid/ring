@@ -41,45 +41,45 @@ function setup() {
 
   // Create a slider to control the volume
   volumeSlider = createSlider(0, 1, volume, 0.01);
-  volumeSlider.position(200, 25);
+  volumeSlider.position(20, 25);
   
   // Create a slider to control the dispersal of the waveform
   dispersalSlider = createSlider(1, 3, 1.5, 0.1);
-  dispersalSlider.position(200, 70);
+  dispersalSlider.position(20, 70);
 
   // Create a slider to control the length of the waveform
   lengthSlider = createSlider(1, 100, 10, 5);
-  lengthSlider.position(200, 115);
+  lengthSlider.position(20, 115);
 
   // Create a slider to control the detail of the waveform
   detailSlider = createSlider(1, 20, 18, 1);
-  detailSlider.position(200, 160);
+  detailSlider.position(20, 160);
 
   // Create a slider to control the mean size of the particles
   particleSizeSlider = createSlider(1, 15, 5, 1);
-  particleSizeSlider.position(200, 205);
+  particleSizeSlider.position(20, 205);
 
   // Create a slider to control the dispersal of the particle size
   particleSizeDispSlider = createSlider(-1, 1, 0, 0.1);
-  particleSizeDispSlider.position(200, 250);
+  particleSizeDispSlider.position(20, 250);
 
   // Create a sider to control the ring size
   ringSizeSlider = createSlider(0.5, 2, 1, 0.1);
-  ringSizeSlider.position(200, 295);
+  ringSizeSlider.position(20, 295);
 
   // Create a slider to control the hue range
   hueSlider = createSlider(0, 360, 90, 1);
-  hueSlider.position(200, 340);
+  hueSlider.position(20, 340);
 
   // Create a slider to control the spacing
   spacingSlider = createSlider(0, 100, 20, 1);
-  spacingSlider.position(200, 385);
+  spacingSlider.position(20, 385);
   
   // Create a button to select a song
   songSelect = createSelect();
-  songSelect.position(200, 450);
-  songSelect.option('Baiana', ['baiana']);
+  songSelect.position(width/2 - 100,20);
   songSelect.option('Carambolage', ['carambolage']);
+  songSelect.option('Baiana', ['baiana']);
   songSelect.option('Dexter', ['dexter']);
   songSelect.option('Drava', ['drava']);
   songSelect.option('Eventually', ['eventually']);
@@ -143,27 +143,8 @@ function draw() {
 
   fill(255);
   stroke(255);
-  text("Volume", -width/4+40 , -height/4+40);
-  text("Dispersal", -width/4+40 , -height/4+60);
-  text("Length", -width/4+40 , -height/4+80);
-  text("Detail", -width/4+40 , -height/4+100);
-  text("Particle Size", -width/4+40 , -height/4+120);
-  text("Particle Size Dispersal", -width/4+40 , -height/4+140);
-  text("Ring Size", -width/4+40 , -height/4+160);
-  text("Hue Range", -width/4+40 , -height/4+180);
-  text("Spacing", -width/4+40 , -height/4+200);
 
-  text("Select song", -width/4+40 , -height/4+240);
 
-  text("Left Arrow: -5s", -width/4+40 , -height/4+260);
-  text("Right Arrow: +5s", -width/4+40 , -height/4+280);
-  text("Up Arrow: +0.1 Volume", -width/4+40 , -height/4+300);
-  text("Down Arrow: -0.1 Volume", -width/4+40 , -height/4+320);
-  text("Enter: Pause/Play", -width/4+40 , -height/4+340);
-  text("Space: Reset", -width/4+40 , -height/4+360);
-  text("Click and drag to rotate", -width/4+40 , -height/4+380);
-  text("Scroll to zoom", -width/4+40 , -height/4+400);
-  text("Double click to reset view", -width/4+40 , -height/4+420);
 
   // Set the volume based on the slider value
   volume = volumeSlider.value()
