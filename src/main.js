@@ -9,6 +9,8 @@ import { LIBRARY } from './library.js';
 import { lookupSong, searchSongs } from './catalog.js';
 import { FORMATS, MAX_SECONDS, Recorder, canRecord } from './recorder.js';
 import * as spotify from './spotify.js';
+import { MilkDrop } from './milkdrop.js';
+import { MILK_PRESETS } from './milkdrop-presets.js';
 
 const $ = (id) => document.getElementById(id);
 const body = document.body;
@@ -16,6 +18,7 @@ const body = document.body;
 const audio = new AudioEngine();
 const vis = new Visualizer($('stage'));
 const recorder = new Recorder();
+const milk = new MilkDrop();
 
 const shared = fromHash(location.hash);
 let settings = shared.settings || loadStored() || { ...DEFAULTS };
@@ -87,6 +90,19 @@ function buildParams() {
         input = Object.assign(document.createElement('input'), { type: 'checkbox', className: 'switch', id });
         input.addEventListener('change', () => setParam(p.key, input.checked));
         row.append(label, input);
+      } else if (p.type === 'preset') {
+        row.className = 'param preset';
+        input = Object.assign(document.createElement('select'), { id, className: 'preset-select' });
+        input.append(...p.options.map((name) => Object.assign(document.createElement('option'), { value: name, textContent: name })));
+        input.addEventListener('change', () => setParam(p.key, input.value));
+        const nav = document.createElement('div');
+        nav.className = 'preset-nav';
+        for (const [label, step] of [['Previous', -1], ['Next', 1], ['Random', 0]]) {
+          const b = Object.assign(document.createElement('button'), { type: 'button', className: 'text-btn', textContent: label });
+          b.addEventListener('click', () => stepPreset(step));
+          nav.append(b);
+        }
+        row.append(label, input, nav);
       } else if (p.type === 'choice') {
         row.className = 'param';
         input = segmented(p.options, (v) => setParam(p.key, v), p.label);
@@ -124,6 +140,7 @@ function syncControls() {
     const v = settings[p.key];
     if (p.type === 'toggle') input.checked = v;
     else if (p.type === 'choice') input.select(v);
+    else if (p.type === 'preset') input.value = v;
     else {
       input.value = v;
       output.textContent = format(p, v);
@@ -140,6 +157,8 @@ let saveTimer;
 function applySettings(next) {
   settings = sanitize(next);
   vis.apply(settings);
+  milk.setPreset(settings.milkPreset);
+  ensureMilk();
   syncControls();
   document.body.style.backgroundColor = settings.background;
   clearTimeout(saveTimer);
@@ -147,6 +166,32 @@ function applySettings(next) {
 }
 function setParam(key, value) {
   applySettings({ ...settings, [key]: value });
+}
+
+function stepPreset(step) {
+  const i = MILK_PRESETS.indexOf(settings.milkPreset);
+  const next = step === 0
+    ? MILK_PRESETS[Math.floor(Math.random() * MILK_PRESETS.length)]
+    : MILK_PRESETS[(i + step + MILK_PRESETS.length) % MILK_PRESETS.length];
+  applySettings({ ...settings, milkPreset: next, milkLayer: settings.milkLayer === 'off' && settings.milkColors === 0 ? 'walls' : settings.milkLayer });
+}
+
+// Loads MilkDrop the first time a setting needs it and audio is unlocked.
+let milkFailed = false;
+function ensureMilk() {
+  if (milk.ready || milkFailed || !vis.milkWanted || !audio.ctx) return;
+  if (!MilkDrop.supported) {
+    milkFailed = true;
+    toast('MilkDrop needs WebGL 2, which this browser doesn’t have.');
+    return;
+  }
+  milk.load(audio.ctx, audio.tap)
+    .then(() => vis.setMilkCanvas(milk.canvas))
+    .catch((err) => {
+      milkFailed = true;
+      console.warn('[ring] MilkDrop failed', err);
+      toast('MilkDrop couldn’t start in this browser.');
+    });
 }
 
 function randomize() {
@@ -627,6 +672,7 @@ const SILENCE_HINTS = {
 
 audio.addEventListener('track', (e) => {
   const track = e.detail;
+  ensureMilk();
   if (audio.mode === 'stream') Object.assign(live, { since: performance.now(), heard: false, warned: false });
   if (audio.mode === 'stream' && spotify.isConnected()) startSpotify();
   if (audio.mode !== 'stream') stopSpotify();
@@ -916,7 +962,7 @@ function begin(play = true) {
   const hadFocus = document.activeElement === q;
   $('top-slot').append(search);
   if (hadFocus) q.focus();
-  audio.unlock();
+  audio.unlock().then(ensureMilk);
   if (play && pendingTrack) {
     const i = LIBRARY.indexOf(pendingTrack);
     if (i >= 0) playFrom(LIBRARY, i);
@@ -1156,6 +1202,7 @@ window.addEventListener('keydown', (e) => {
     case 't': toggleSide('tune'); break;
     case 'v': recorder.active ? stopRecording() : startRecording(); break;
     case 's': setParam('mode', settings.mode === 'wave' ? 'spectrum' : 'wave'); break;
+    case 'm': stepPreset(1); break;
     case 'r': randomize(); break;
     case 'f': toggleFullscreen(); break;
     case 'h': body.classList.toggle('hide-ui'); break;
@@ -1195,6 +1242,7 @@ function loop(now) {
   if (audio.sample(now)) wave = settings.mode === 'spectrum' ? audio.specData : audio.timeData;
   else if (audio.mode === 'idle') wave = synth(now / 1000);
   // A paused track leaves wave null, which freezes the tunnel so you can orbit it.
+  if (milk.ready && vis.milkWanted) milk.render();
   vis.frame(dt, now, wave, audio.bass, audio.beat);
 
   uiClock += dt;

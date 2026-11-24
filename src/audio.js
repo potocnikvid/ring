@@ -58,7 +58,11 @@ export class AudioEngine extends EventTarget {
       // Recording tap: taken before the volume stage, like the analyser,
       // so a muted tab still records at full level.
       this.recordTap = this.ctx.createMediaStreamDestination();
+      // Every source also feeds this node, so extra listeners (MilkDrop) connect
+      // once and keep hearing whatever plays.
+      this.tap = this.ctx.createGain();
       this.elSource = this.ctx.createMediaElementSource(this.el);
+      this.elSource.connect(this.tap);
       this.elSource.connect(this.analyser);
       this.elSource.connect(this.recordTap);
       this.elSource.connect(this.gain);
@@ -210,6 +214,7 @@ export class AudioEngine extends EventTarget {
     this.streamSource = this.ctx.createMediaStreamSource(stream);
     this.streamSource.connect(this.analyser);
     this.streamSource.connect(this.recordTap);
+    this.streamSource.connect(this.tap);
     this.mode = 'stream';
     this.streamKind = kind;
     this.track = track;

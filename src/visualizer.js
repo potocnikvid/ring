@@ -1,5 +1,5 @@
 import {
-  BoxGeometry, Color, DataTexture, IcosahedronGeometry, InstancedBufferAttribute, InstancedBufferGeometry,
+  BoxGeometry, CanvasTexture, Color, CylinderGeometry, DataTexture, DoubleSide, BackSide, SphereGeometry, IcosahedronGeometry, InstancedBufferAttribute, InstancedBufferGeometry,
   LinearFilter, Mesh, NearestFilter, PerspectiveCamera, PlaneGeometry, RGBAFormat, RedFormat, SRGBColorSpace, Scene,
   ShaderMaterial, UnsignedByteType, Vector2, WebGLRenderer,
 } from 'three';
@@ -24,7 +24,8 @@ const vertexShader = /* glsl */ `
   uniform sampler2D uPalette;
   uniform float uHead, uLength, uDispersal, uRingSize, uSize, uSizeVar, uSpacing;
   uniform float uHueStart, uHueRange, uPulse, uBass, uFade;
-  uniform float uSymmetry, uTwist, uShape, uUsePalette;
+  uniform float uSymmetry, uTwist, uShape, uUsePalette, uMilkMix;
+  uniform sampler2D uMilk;
   attribute float aRing;
   attribute float aSample;
   varying vec3 vColor;
@@ -62,6 +63,15 @@ const vertexShader = /* glsl */ `
       float hue = mod(uHueStart + t * uHueRange, 360.0) / 360.0;
       float sat = clamp((255.0 - size * 10.0) / 100.0, 0.0, 1.0);
       srgb = hsv2rgb(vec3(hue, sat, 1.0));
+    }
+    if (uMilkMix > 0.001) {
+      // Take the colour MilkDrop shows at this particle's spot on screen,
+      // normalised so dark areas still give a colour.
+      vec4 cp = projectionMatrix * modelViewMatrix * vec4(center, 1.0);
+      vec2 suv = clamp(cp.xy / cp.w * 0.5 + 0.5, 0.0, 1.0);
+      vec3 m = texture2D(uMilk, suv).rgb;
+      m /= max(max(m.r, max(m.g, m.b)), 0.25);
+      srgb = mix(srgb, m, uMilkMix);
     }
     vColor = pow(srgb, vec3(2.2)) * (1.0 - uFade * t);
     vUv = uv;
@@ -101,6 +111,44 @@ const fragmentShader = /* glsl */ `
     #include <colorspace_fragment>
   }
 `;
+
+// MilkDrop layers: the off-screen MilkDrop image mapped onto the tunnel walls or
+// a surrounding sphere, mirrored so the tiles meet without seams.
+const layerVertex = /* glsl */ `
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+const layerFragment = /* glsl */ `
+  uniform sampler2D uMilk;
+  uniform float uAmount, uScroll, uRepeatU, uRepeatV, uFar;
+  varying vec2 vUv;
+  void main() {
+    float u = 1.0 - abs(2.0 * fract(vUv.x * uRepeatU * 0.5) - 1.0);
+    float v = 1.0 - abs(2.0 * fract((vUv.y * uRepeatV - uScroll) * 0.5) - 1.0);
+    // Slightly dimmed so the ring stays the brightest thing in the scene.
+    vec3 c = pow(texture2D(uMilk, vec2(u, v)).rgb, vec3(2.2)) * 0.8;
+    float fade = mix(1.0, smoothstep(0.0, 0.55, vUv.y), uFar);
+    gl_FragColor = vec4(c, uAmount * fade);
+    #include <colorspace_fragment>
+  }
+`;
+
+function layerMaterial(repeatU, repeatV, far, side) {
+  return new ShaderMaterial({
+    uniforms: {
+      uMilk: { value: null }, uAmount: { value: 0.7 }, uScroll: { value: 0 },
+      uRepeatU: { value: repeatU }, uRepeatV: { value: repeatV }, uFar: { value: far },
+    },
+    vertexShader: layerVertex,
+    fragmentShader: layerFragment,
+    transparent: true,
+    depthWrite: false,
+    side,
+  });
+}
 
 function shapeGeometry(shape) {
   if (shape === 'sphere') return new IcosahedronGeometry(0.62, 0);
@@ -149,7 +197,13 @@ export class Visualizer {
       uSize: u(5), uSizeVar: u(0), uSpacing: u(20), uHueStart: u(0), uHueRange: u(90),
       uPulse: u(0), uBass: u(0), uFade: u(0), uOutline: u(1),
       uSymmetry: u(0), uTwist: u(0), uShape: u(0), uUsePalette: u(0), uPalette: u(null),
+      uMilk: u(null), uMilkMix: u(0),
     };
+    // Black placeholder until MilkDrop loads.
+    this.milkTex = new DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1, RGBAFormat, UnsignedByteType);
+    this.milkTex.needsUpdate = true;
+    this.milkReady = false;
+    this.uniforms.uMilk.value = this.milkTex;
     this.paletteData = new Uint8Array(256 * 4);
     this.paletteTex = new DataTexture(this.paletteData, 256, 1, RGBAFormat, UnsignedByteType);
     this.paletteTex.minFilter = this.paletteTex.magFilter = LinearFilter;
@@ -159,6 +213,22 @@ export class Visualizer {
     this.mesh = new Mesh(this.geometry, material);
     this.mesh.frustumCulled = false;
     this.scene.add(this.mesh);
+
+    // Tunnel walls: a long tube around the ring along -z, open at both ends.
+    const TUBE = 5200;
+    const tube = new CylinderGeometry(900, 900, TUBE, 96, 1, true);
+    tube.rotateX(Math.PI / 2); // axis along z; uv.y = 1 at the camera end
+    this.walls = new Mesh(tube, layerMaterial(4, 4, 1, DoubleSide));
+    this.walls.position.z = -TUBE / 2 + 900;
+    this.walls.renderOrder = -1;
+    this.walls.visible = false;
+    this.scene.add(this.walls);
+
+    this.backdrop = new Mesh(new SphereGeometry(7000, 48, 24), layerMaterial(2, 1, 0, BackSide));
+    this.backdrop.renderOrder = -2;
+    this.backdrop.visible = false;
+    this.scene.add(this.backdrop);
+    this.milkScroll = 0;
 
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
@@ -217,8 +287,32 @@ export class Visualizer {
     this.paletteTex.needsUpdate = true;
   }
 
+  // Hands over the canvas MilkDrop renders into.
+  setMilkCanvas(canvas) {
+    const tex = new CanvasTexture(canvas);
+    tex.minFilter = tex.magFilter = LinearFilter;
+    tex.generateMipmaps = false;
+    this.milkTex = tex;
+    this.uniforms.uMilk.value = tex;
+    this.walls.material.uniforms.uMilk.value = tex;
+    this.backdrop.material.uniforms.uMilk.value = tex;
+    this.milkReady = true;
+    if (this.settings) this.apply(this.settings);
+  }
+
+  // Whether the current settings use MilkDrop at all.
+  get milkWanted() {
+    const s = this.settings;
+    return !!s && (s.milkLayer !== 'off' || s.milkColors > 0);
+  }
+
   apply(s) {
     const u = this.uniforms;
+    this.walls.visible = this.milkReady && s.milkLayer === 'walls';
+    this.backdrop.visible = this.milkReady && s.milkLayer === 'backdrop';
+    this.walls.material.uniforms.uAmount.value = s.milkAmount;
+    this.backdrop.material.uniforms.uAmount.value = s.milkAmount;
+    u.uMilkMix.value = this.milkReady ? s.milkColors : 0;
     this.setShape(s.shape);
     u.uShape.value = SHAPES[s.shape] ?? 0;
     u.uSymmetry.value = s.symmetry;
@@ -372,6 +466,13 @@ export class Visualizer {
     this.hueStart = (this.hueStart + this.settings.hueSpeed * dt * 60) % 360;
     this.uniforms.uHueStart.value = this.hueStart;
     this.uniforms.uBass.value = bass;
+    if (this.milkReady && this.milkWanted) {
+      this.milkTex.needsUpdate = true;
+      // The walls flow toward the camera, faster on bass hits.
+      this.milkScroll += dt * (0.12 + bass * 0.6);
+      this.walls.material.uniforms.uScroll.value = this.milkScroll;
+      this.backdrop.material.uniforms.uScroll.value = this.milkScroll * 0.1;
+    }
     this.controls.update(dt);
     if (!this.width || !this.height) return;
     const composed = this.bloom.enabled || this.trails.enabled;
