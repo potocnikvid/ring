@@ -707,6 +707,8 @@ kbd {
     width: auto;
     max-height: 72dvh;
     z-index: 6;
+    /* Sheets cover the player here, so they need to hide it. */
+    background: rgb(13 13 15 / 0.97);
   }
   .toast { bottom: 180px; }
 }
