@@ -723,6 +723,14 @@ kbd {
   .toast { bottom: 180px; }
 }
 
+/* Very narrow phones (iPhone SE and similar): keep all three buttons on screen */
+@media (max-width: 360px) {
+  .wordmark { font-size: 20px; }
+  .corner { gap: 6px; }
+  .chip { padding: 0 10px; }
+  .rec-chip .chip-label { display: none; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition-duration: 0.01ms !important; }
 }
