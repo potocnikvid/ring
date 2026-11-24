@@ -22,7 +22,7 @@ let started = false;
 
 /* ---------- Toast ---------- */
 let toastTimer;
-function toast(message, ms = 3200) {
+function toast(message, ms = 3600) {
   const el = $('toast');
   el.textContent = message;
   el.classList.add('show');
@@ -352,10 +352,36 @@ async function goLive(kind) {
     setPanel('sources', false);
     toast(kind === 'tab' ? 'Listening to the shared tab.' : 'Listening to your microphone.');
   } catch (err) {
-    if (err.name === 'NotAllowedError') {
-      toast(kind === 'tab' ? 'Sharing was cancelled.' : 'Microphone access is blocked. Allow it in your browser’s site settings.');
-    } else toast(err.message || 'Couldn’t start live audio.');
+    toast(liveError(kind, err), 7000);
   }
+}
+
+// Browsers report a user cancel, an OS-level block and an unsupported context with
+// the same error name, so tell them apart by message.
+function liveError(kind, err) {
+  console.warn('[ring] live audio failed:', err.name, err.message);
+  const msg = String(err.message || '');
+  const tab = kind === 'tab';
+  if (err.name === 'NotAllowedError' && /by system/i.test(msg)) {
+    return tab
+      ? 'macOS is blocking screen sharing for this browser. Allow it in System Settings → Privacy & Security → Screen & System Audio Recording, then restart the browser.'
+      : 'macOS is blocking the microphone for this browser. Allow it in System Settings → Privacy & Security → Microphone.';
+  }
+  if (err.name === 'NotAllowedError' && /user agent|platform|context|gesture|activation/i.test(msg)) {
+    return 'This browser blocked the request. Try Chrome or Edge on a computer.';
+  }
+  if (err.name === 'NotAllowedError') {
+    return tab
+      ? 'Sharing didn’t start. Pick the tab, turn on “Share tab audio”, then click Share.'
+      : 'Microphone access is blocked. Allow it in your browser’s site settings.';
+  }
+  if (err.name === 'NotSupportedError' || err.name === 'TypeError' || err.name === 'InvalidStateError') {
+    return 'This browser can’t share audio. Try Chrome or Edge on a computer.';
+  }
+  if (err.name === 'NotReadableError' || err.name === 'AbortError') {
+    return 'The browser couldn’t start capturing. Close other apps using the screen or microphone and try again.';
+  }
+  return err.message || 'Couldn’t start live audio.';
 }
 
 /* ---------- Start screen ---------- */

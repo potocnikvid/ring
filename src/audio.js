@@ -112,22 +112,24 @@ export class AudioEngine extends EventTarget {
   }
 
   async useMicrophone() {
-    await this.unlock();
+    // Ask before any other await, while the click still counts as a user gesture.
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
     });
+    await this.unlock();
     this._useStream(stream, { id: 'mic', title: 'Microphone', subtitle: 'Live input' });
   }
 
   // Lets people visualise Spotify, YouTube, Apple Music… playing in another tab.
   async useTabAudio() {
-    await this.unlock();
+    // Ask before any other await: browsers only allow this directly from a click.
     const stream = await navigator.mediaDevices.getDisplayMedia({
       video: true,
       audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
       systemAudio: 'include',
       selfBrowserSurface: 'exclude',
     });
+    await this.unlock();
     const audioTracks = stream.getAudioTracks();
     stream.getVideoTracks().forEach((t) => t.stop());
     if (!audioTracks.length) {
@@ -138,9 +140,10 @@ export class AudioEngine extends EventTarget {
   }
 
   static get canCaptureTab() {
-    // Firefox and iOS Safari don't capture audio via getDisplayMedia.
+    // Firefox, Safari and mobile browsers don't capture audio via getDisplayMedia.
     const ua = navigator.userAgent;
-    return !!navigator.mediaDevices?.getDisplayMedia && !/Firefox|iPhone|iPad/.test(ua);
+    const safari = /Safari/.test(ua) && !/Chrome|Chromium|Edg\//.test(ua);
+    return !!navigator.mediaDevices?.getDisplayMedia && !safari && !/Firefox|iPhone|iPad|Android/.test(ua);
   }
   static get canUseMic() {
     return !!navigator.mediaDevices?.getUserMedia;
