@@ -1,52 +1,241 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
-    <title>Ring</title>
-
-    <link rel="stylesheet" type="text/css" href="style.css" />
-
-    <script src="libraries/p5.min.js"></script>
-    <script src="libraries/p5.sound.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/gh/freshfork/p5.EasyCam@1.2.1/p5.easycam.min.js"></script>
-    <link rel="apple-touch-icon" sizes="180x180" href="assets/favicon/apple-touch-icon.png" />
-    <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon/favicon-32x32.png" />
-    <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon/favicon-16x16.png" />
-    <link rel="manifest" href="assets/favicon/site.webmanifest" />
-    <link rel="mask-icon" href="assets/favicon/safari-pinned-tab.svg" color="#5bbad5" />
-    <meta name="msapplication-TileColor" content="#603cba" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>ring</title>
+    <meta name="description" content="A 3D audio visualiser. Search any song, play your files, or visualise Spotify and anything else your computer plays. Record clips to share." />
+    <meta property="og:title" content="ring" />
+    <meta property="og:description" content="A 3D audio visualiser that turns any song into a tunnel of light." />
+    <meta property="og:type" content="website" />
     <meta name="theme-color" content="#000000" />
+    <meta name="color-scheme" content="dark" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="mask-icon" href="/favicon/safari-pinned-tab.svg" color="#5bbad5" />
+    <link rel="preconnect" href="https://itunes.apple.com" crossorigin />
   </head>
-
   <body>
-    <p style="position: absolute; bottom: -20px; right: 40px; font-size: 48px;"><b>ring</b></p>
-    <p style="position: absolute; left: 165px; top: 10px;"><b>Volume</b></p>
-    <p style="position: absolute; left: 165px; top: 55px;"><b>Dispersal</b></p>
-    <p style="position: absolute; left: 165px; top: 100px;"><b>Length</b></p>
-    <p style="position: absolute; left: 165px; top: 145px;"><b>Detail</b></p>
-    <p style="position: absolute; left: 165px; top: 190px;">
-      <b>Particle Size</b></p>
-    <p style="position: absolute; left: 165px; top: 235px;"><b>Particle Size Dispersal</b></p>
-    <p style="position: absolute; left: 165px; top: 280px;"><b>Ring Size</b></p>
-    <p style="position: absolute; left: 165px; top: 325px;"><b>Hue Range</b></p>
-    <p style="position: absolute; left: 165px; top: 370px;"><b>Spacing</b></p>
+    <canvas id="stage" aria-label="Audio visualisation. Drag to rotate, scroll to zoom, double-click to reset the view."></canvas>
 
+    <header class="topbar">
+      <h1 class="wordmark">ring</h1>
+      <div class="search-slot" id="top-slot"></div>
+      <div class="corner">
+        <button class="chip rec-chip" id="record-toggle" aria-expanded="false" aria-controls="record">
+          <span class="dot" aria-hidden="true"></span>Record
+        </button>
+        <button class="chip" id="tune-toggle" aria-expanded="false" aria-controls="tune">Tune</button>
+      </div>
+    </header>
 
-    <p style="position: absolute; left: 20px; bottom: 160px;"><b>Left Arrow: -5s</b></p>
-    <p style="position: absolute; left: 20px; bottom: 140px;"><b>Right Arrow: +5s</b></p>
-    <p style="position: absolute; left: 20px; bottom: 120px;"><b>Up Arrow: +0.1 Volume</b></p>
-    <p style="position: absolute; left: 20px; bottom: 100px;"><b>Down Arrow: -0.1 Volume</b></p>
-    <p style="position: absolute; left: 20px; bottom: 80px;"><b>Enter: Pause/Play</b></p>
-    <p style="position: absolute; left: 20px; bottom: 60px;"><b>Space: Reset</b></p>
-    <p style="position: absolute; left: 20px; bottom: 40px;"><b>Click and drag to rotate</b></p>
-    <p style="position: absolute; left: 20px; bottom: 20px;"><b>Scroll to zoom</b></p>
-    <p style="position: absolute; left: 20px; bottom: 0px;"><b>Double click to reset view</b></p>
+    <!-- The search box lives on the start screen first, then moves to the top bar. -->
+    <div class="search" id="search">
+      <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" /><path d="M16 16l4.5 4.5" /></svg>
+      <input
+        id="q"
+        type="search"
+        role="combobox"
+        aria-expanded="false"
+        aria-controls="palette"
+        aria-autocomplete="list"
+        placeholder="Search any song or artist"
+        autocomplete="off"
+        spellcheck="false"
+      />
+      <kbd class="slash" aria-hidden="true">/</kbd>
+      <div id="palette" class="panel palette" hidden>
+        <div id="palette-home">
+          <div class="tiles" role="group" aria-label="Listen to">
+            <label class="tile" id="tile-files">
+              <input type="file" id="file-input" accept="audio/*" multiple />
+              <strong>Your files</strong>
+              <span>Pick or drop audio</span>
+            </label>
+            <button class="tile" id="tile-tab">
+              <strong>A browser tab</strong>
+              <span>YouTube, SoundCloud, web players</span>
+            </button>
+            <button class="tile" id="tile-system">
+              <strong>Computer audio</strong>
+              <span>Any app, including Spotify</span>
+            </button>
+            <button class="tile" id="tile-input">
+              <strong>Microphone or input</strong>
+              <span>The room, or a loopback device</span>
+            </button>
+            <button class="tile tile-spotify" id="tile-spotify" hidden>
+              <strong>Spotify</strong>
+              <span id="spotify-tile-text">Connect to see and control what’s playing</span>
+            </button>
+          </div>
+          <div class="inputs" id="inputs" hidden>
+            <label for="input-select">Input</label>
+            <select id="input-select"></select>
+            <p class="note">On a Mac, a loopback device like BlackHole carries any app’s sound here without screen sharing.</p>
+          </div>
+          <section class="section" id="recent-section" hidden>
+            <h3>Recently played</h3>
+            <ul class="tracks" role="listbox" id="recent-list" aria-label="Recently played"></ul>
+          </section>
+          <section class="section">
+            <h3>Library</h3>
+            <ul class="tracks" role="listbox" id="library-list" aria-label="Library"></ul>
+          </section>
+        </div>
+        <div id="palette-results" hidden>
+          <section class="section" id="lib-results-section" hidden>
+            <h3>In the library</h3>
+            <ul class="tracks" role="listbox" id="lib-results" aria-label="Library matches"></ul>
+          </section>
+          <section class="section" id="sp-results-section" hidden>
+            <h3>Spotify <span class="h-note">plays on your Spotify device</span></h3>
+            <ul class="tracks" role="listbox" id="sp-results" aria-label="Spotify results"></ul>
+          </section>
+          <section class="section">
+            <h3>Apple Music <span class="h-note">30-second previews</span></h3>
+            <p class="note" id="search-status" role="status"></p>
+            <ul class="tracks" role="listbox" id="am-results" aria-label="Apple Music previews"></ul>
+          </section>
+        </div>
+      </div>
+    </div>
 
+    <aside id="tune" class="panel tune side" aria-label="Tune the visual" hidden>
+      <div class="panel-head">
+        <h2>Tune</h2>
+        <button class="icon-btn" data-close="tune" aria-label="Close tune panel">
+          <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
+      </div>
+      <div class="presets" id="presets" role="group" aria-label="Presets"></div>
+      <div class="params" id="params"></div>
+      <div class="panel-foot">
+        <button class="text-btn" id="randomize">Randomize</button>
+        <button class="text-btn" id="share">Copy link</button>
+        <button class="text-btn" id="reset">Reset</button>
+      </div>
+    </aside>
 
+    <aside id="record" class="panel record side" aria-label="Record a clip" hidden>
+      <div class="panel-head">
+        <h2>Record a clip</h2>
+        <button class="icon-btn" data-close="record" aria-label="Close record panel">
+          <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
+      </div>
+      <div class="record-body">
+        <fieldset class="group">
+          <legend>Frame</legend>
+          <div class="segmented" id="formats" role="radiogroup" aria-label="Frame"></div>
+        </fieldset>
+        <div class="param toggle">
+          <label for="rec-audio">Include sound</label>
+          <input type="checkbox" class="switch" id="rec-audio" checked />
+        </div>
+        <p class="note" id="rec-note">Records the visual only, never the controls. Up to 10 minutes.</p>
+        <button class="primary" id="rec-start"><span class="dot" aria-hidden="true"></span>Start recording</button>
+      </div>
+      <div class="clip" id="clip" hidden>
+        <video id="clip-video" playsinline controls muted loop></video>
+        <p class="clip-meta" id="clip-meta"></p>
+        <div class="clip-actions">
+          <a class="primary" id="clip-save" download>Save video</a>
+          <button class="text-btn" id="clip-share" hidden>Share</button>
+          <button class="text-btn" id="clip-discard">Discard</button>
+        </div>
+      </div>
+    </aside>
 
+    <div class="rec-pill" id="rec-pill" hidden>
+      <span class="dot" aria-hidden="true"></span>
+      <span id="rec-time">0:00</span>
+      <button id="rec-stop">Stop</button>
+    </div>
 
-    <script src="waveform.js"></script>
+    <footer class="player" aria-label="Player">
+      <div class="now">
+        <div class="art" id="art" aria-hidden="true"></div>
+        <div class="meta">
+          <span class="title" id="title">Nothing playing</span>
+          <span class="sub" id="subtitle"></span>
+        </div>
+      </div>
+
+      <div class="transport">
+        <button class="icon-btn" id="prev" aria-label="Previous track">
+          <svg viewBox="0 0 24 24"><path d="M7 5v14M18 6l-8 6 8 6z" /></svg>
+        </button>
+        <button class="icon-btn play" id="play" aria-label="Play">
+          <svg class="i-play" viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z" /></svg>
+          <svg class="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14" /></svg>
+        </button>
+        <button class="icon-btn" id="next" aria-label="Next track">
+          <svg viewBox="0 0 24 24"><path d="M17 5v14M6 6l8 6-8 6z" /></svg>
+        </button>
+      </div>
+
+      <div class="timeline">
+        <span class="time" id="time">0:00</span>
+        <input type="range" class="range seek" id="seek" min="0" max="1000" value="0" step="1" aria-label="Seek" />
+        <span class="time" id="duration">0:00</span>
+      </div>
+
+      <div class="extras">
+        <a class="link" id="store-link" target="_blank" rel="noopener" hidden></a>
+        <button class="text-btn stop-live" id="stop-live" hidden>Stop listening</button>
+        <label class="volume" id="volume-wrap">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4zM16 9a4 4 0 010 6" /></svg>
+          <input type="range" class="range" id="volume" min="0" max="1" step="0.01" value="0.5" aria-label="Volume" />
+        </label>
+        <button class="icon-btn" id="fullscreen" aria-label="Full screen">
+          <svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>
+        </button>
+        <button class="icon-btn" id="help" aria-label="Keyboard shortcuts">
+          <svg viewBox="0 0 24 24"><path d="M3 7h18v10H3zM7 11h1M11 11h2M16 11h1M8 14h8" /></svg>
+        </button>
+      </div>
+    </footer>
+
+    <div class="start" id="start">
+      <p class="start-word" aria-hidden="true">ring</p>
+      <div class="search-slot start-slot" id="start-slot"></div>
+      <div class="start-actions">
+        <button class="start-btn" id="start-btn">Play the library</button>
+        <button class="start-alt" id="start-system">Visualise my computer’s audio</button>
+      </div>
+      <p class="start-hint">Headphones on. Drag to orbit the ring, pinch or scroll to zoom.</p>
+    </div>
+
+    <div class="drop" id="drop" aria-hidden="true"><span>Drop to play</span></div>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <dialog id="keys" class="panel keys" aria-labelledby="keys-title">
+      <div class="panel-head">
+        <h2 id="keys-title">Shortcuts</h2>
+        <button class="icon-btn" data-close-dialog aria-label="Close shortcuts">
+          <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
+      </div>
+      <dl>
+        <dt><kbd>/</kbd></dt><dd>Search</dd>
+        <dt><kbd>Enter</kbd></dt><dd>Play or pause</dd>
+        <dt><kbd>Space</kbd></dt><dd>Back to the start of the track</dd>
+        <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Seek 5 seconds</dd>
+        <dt><kbd>↑</kbd> <kbd>↓</kbd></dt><dd>Volume</dd>
+        <dt><kbd>N</kbd> <kbd>P</kbd></dt><dd>Next or previous track</dd>
+        <dt><kbd>V</kbd></dt><dd>Start or stop recording</dd>
+        <dt><kbd>T</kbd></dt><dd>Tune panel</dd>
+        <dt><kbd>S</kbd></dt><dd>Switch waveform / spectrum</dd>
+        <dt><kbd>R</kbd></dt><dd>Randomize the look</dd>
+        <dt><kbd>H</kbd></dt><dd>Hide the interface</dd>
+        <dt><kbd>F</kbd></dt><dd>Full screen</dd>
+        <dt>Double-click</dt><dd>Reset the view</dd>
+      </dl>
+    </dialog>
+
+    <script type="module" src="/src/main.js"></script>
   </body>
 </html>
