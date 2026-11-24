@@ -1,8 +1,9 @@
 import {
-  BoxGeometry, DataTexture, InstancedBufferAttribute, InstancedBufferGeometry, Mesh,
-  NearestFilter, PerspectiveCamera, RedFormat, Scene, ShaderMaterial, UnsignedByteType,
-  Vector2, WebGLRenderer,
+  BoxGeometry, Color, DataTexture, IcosahedronGeometry, InstancedBufferAttribute, InstancedBufferGeometry,
+  LinearFilter, Mesh, NearestFilter, PerspectiveCamera, PlaneGeometry, RGBAFormat, RedFormat, SRGBColorSpace, Scene,
+  ShaderMaterial, UnsignedByteType, Vector2, WebGLRenderer,
 } from 'three';
+import { AfterimagePass } from 'three/addons/postprocessing/AfterimagePass.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -16,10 +17,14 @@ const MAX_INSTANCES = MAX_RINGS * SAMPLES;
 // Each instance is one cube: (which ring in the history, which waveform sample).
 // Everything else (radius, size, colour) is computed here on the GPU from the
 // waveform history texture, the same maths ring v1 ran per box in JavaScript.
+const SHAPES = { cube: 0, sphere: 1, dot: 2 };
+
 const vertexShader = /* glsl */ `
   uniform sampler2D uHistory;
+  uniform sampler2D uPalette;
   uniform float uHead, uLength, uDispersal, uRingSize, uSize, uSizeVar, uSpacing;
   uniform float uHueStart, uHueRange, uPulse, uBass, uFade;
+  uniform float uSymmetry, uTwist, uShape, uUsePalette;
   attribute float aRing;
   attribute float aSample;
   varying vec3 vColor;
@@ -32,41 +37,76 @@ const vertexShader = /* glsl */ `
   }
 
   void main() {
+    // Symmetry folds the first half of the waveform into N mirrored petals.
+    float lookup = aSample;
+    if (uSymmetry > 0.5) {
+      float seg = fract(aSample / ${SAMPLES}.0 * uSymmetry);
+      lookup = (1.0 - abs(2.0 * seg - 1.0)) * (${SAMPLES}.0 * 0.5 - 1.0);
+    }
     float row = mod(uHead - aRing + ${MAX_RINGS}.0, ${MAX_RINGS}.0);
-    float s = texture2D(uHistory, vec2((aSample + 0.5) / ${SAMPLES}.0, (row + 0.5) / ${MAX_RINGS}.0)).r;
+    float s = texture2D(uHistory, vec2((lookup + 0.5) / ${SAMPLES}.0, (row + 0.5) / ${MAX_RINGS}.0)).r;
 
     float r = mix(150.0 / uDispersal * uRingSize, 250.0 * uDispersal * uRingSize, s);
     r *= 1.0 + uPulse * uBass * 0.25;
-    float a = aSample / ${SAMPLES}.0 * 6.28318530718;
+    float a = aSample / ${SAMPLES}.0 * 6.28318530718 + aRing * uTwist;
     float size = max(0.0, mix(uSize - uSize * uSizeVar, uSize + uSize * uSizeVar, s));
     vec3 center = vec3(r * cos(a), r * sin(a), -aRing * uSpacing);
 
     float t = uLength > 1.0 ? aRing / (uLength - 1.0) : 0.0;
-    float hue = mod(uHueStart + t * uHueRange, 360.0) / 360.0;
-    float sat = clamp((255.0 - size * 10.0) / 100.0, 0.0, 1.0);
-    vec3 srgb = hsv2rgb(vec3(hue, sat, 1.0));
+    vec3 srgb;
+    if (uUsePalette > 0.5) {
+      // Walk the palette with depth; mirrored so the gradient never jumps.
+      float p = fract(uHueStart / 360.0 + t * uHueRange / 360.0);
+      srgb = texture2D(uPalette, vec2(1.0 - abs(2.0 * p - 1.0), 0.5)).rgb;
+    } else {
+      float hue = mod(uHueStart + t * uHueRange, 360.0) / 360.0;
+      float sat = clamp((255.0 - size * 10.0) / 100.0, 0.0, 1.0);
+      srgb = hsv2rgb(vec3(hue, sat, 1.0));
+    }
     vColor = pow(srgb, vec3(2.2)) * (1.0 - uFade * t);
-
     vUv = uv;
-    vShade = 0.84 + 0.16 * dot(normal, vec3(0.27, 0.53, 0.8));
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position * size + center, 1.0);
+
+    if (uShape > 1.5) {
+      // Dots face the camera.
+      vShade = 1.0;
+      vec4 mv = modelViewMatrix * vec4(center, 1.0);
+      mv.xy += position.xy * size * 1.3;
+      gl_Position = projectionMatrix * mv;
+    } else {
+      vShade = 0.84 + 0.16 * dot(normal, vec3(0.27, 0.53, 0.8));
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position * size + center, 1.0);
+    }
   }
 `;
 
 const fragmentShader = /* glsl */ `
-  uniform float uOutline;
+  uniform float uOutline, uShape;
   varying vec3 vColor;
   varying vec2 vUv;
   varying float vShade;
 
   void main() {
-    // Dark cube edges, standing in for v1's black stroke.
-    float e = min(min(vUv.x, 1.0 - vUv.x), min(vUv.y, 1.0 - vUv.y));
-    float edge = mix(1.0, smoothstep(0.06, 0.16, e), uOutline);
-    gl_FragColor = vec4(vColor * vShade * edge, 1.0);
+    float k = 1.0;
+    if (uShape > 1.5) {
+      // Soft round dot.
+      float d = length(vUv - 0.5) * 2.0;
+      if (d > 1.0) discard;
+      k = 1.0 - d * d * 0.55;
+    } else if (uShape < 0.5) {
+      // Dark cube edges, standing in for v1's black stroke.
+      float e = min(min(vUv.x, 1.0 - vUv.x), min(vUv.y, 1.0 - vUv.y));
+      k = mix(1.0, smoothstep(0.06, 0.16, e), uOutline);
+    }
+    gl_FragColor = vec4(vColor * vShade * k, 1.0);
     #include <colorspace_fragment>
   }
 `;
+
+function shapeGeometry(shape) {
+  if (shape === 'sphere') return new IcosahedronGeometry(0.62, 0);
+  if (shape === 'dot') return new PlaneGeometry(1, 1);
+  return new BoxGeometry(1, 1, 1);
+}
 
 export class Visualizer {
   constructor(canvas) {
@@ -96,10 +136,8 @@ export class Visualizer {
     this.pushClock = 0;
     this.hueStart = 0;
 
-    const box = new BoxGeometry(1, 1, 1);
     this.geometry = new InstancedBufferGeometry();
-    this.geometry.index = box.index;
-    for (const name of ['position', 'normal', 'uv']) this.geometry.setAttribute(name, box.getAttribute(name));
+    this.setShape('cube');
     this.aRing = new InstancedBufferAttribute(new Float32Array(MAX_INSTANCES), 1);
     this.aSample = new InstancedBufferAttribute(new Float32Array(MAX_INSTANCES), 1);
     this.geometry.setAttribute('aRing', this.aRing);
@@ -110,7 +148,13 @@ export class Visualizer {
       uHistory: u(this.historyTex), uHead: u(0), uLength: u(10), uDispersal: u(1.5), uRingSize: u(1),
       uSize: u(5), uSizeVar: u(0), uSpacing: u(20), uHueStart: u(0), uHueRange: u(90),
       uPulse: u(0), uBass: u(0), uFade: u(0), uOutline: u(1),
+      uSymmetry: u(0), uTwist: u(0), uShape: u(0), uUsePalette: u(0), uPalette: u(null),
     };
+    this.paletteData = new Uint8Array(256 * 4);
+    this.paletteTex = new DataTexture(this.paletteData, 256, 1, RGBAFormat, UnsignedByteType);
+    this.paletteTex.minFilter = this.paletteTex.magFilter = LinearFilter;
+    this.uniforms.uPalette.value = this.paletteTex;
+    this.paletteKey = '';
     const material = new ShaderMaterial({ uniforms: this.uniforms, vertexShader, fragmentShader });
     this.mesh = new Mesh(this.geometry, material);
     this.mesh.frustumCulled = false;
@@ -118,6 +162,8 @@ export class Visualizer {
 
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
+    this.trails = new AfterimagePass(0);
+    this.composer.addPass(this.trails);
     this.bloom = new UnrealBloomPass(new Vector2(256, 256), 0.6, 0.18, 0.32);
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
@@ -135,8 +181,57 @@ export class Visualizer {
     new ResizeObserver(() => this.resize()).observe(canvas);
   }
 
+  setShape(shape) {
+    if (shape === this.shape) return;
+    this.shape = shape;
+    const g = shapeGeometry(shape);
+    this.geometry.setIndex(g.index);
+    for (const name of ['position', 'normal', 'uv']) this.geometry.setAttribute(name, g.getAttribute(name));
+    this.geometry.computeBoundingSphere?.();
+  }
+
+  // Bakes the palette into a 256-step gradient texture.
+  setPalette(stops) {
+    const key = stops.join();
+    if (key === this.paletteKey) return;
+    this.paletteKey = key;
+    // Stored as sRGB bytes; the shader converts to linear.
+    const cols = stops.map((h) => ({
+      r: parseInt(h.slice(1, 3), 16) / 255,
+      g: parseInt(h.slice(3, 5), 16) / 255,
+      b: parseInt(h.slice(5, 7), 16) / 255,
+    }));
+    for (let i = 0; i < 256; i++) {
+      const x = (i / 255) * (cols.length - 1);
+      const j = Math.min(cols.length - 2, Math.floor(x));
+      const f = x - j;
+      const a = cols[j];
+      const b = cols[j + 1];
+      this.paletteData.set([
+        Math.round((a.r + (b.r - a.r) * f) * 255),
+        Math.round((a.g + (b.g - a.g) * f) * 255),
+        Math.round((a.b + (b.b - a.b) * f) * 255),
+        255,
+      ], i * 4);
+    }
+    this.paletteTex.needsUpdate = true;
+  }
+
   apply(s) {
     const u = this.uniforms;
+    this.setShape(s.shape);
+    u.uShape.value = SHAPES[s.shape] ?? 0;
+    u.uSymmetry.value = s.symmetry;
+    u.uTwist.value = s.twist;
+    u.uUsePalette.value = s.colorMode === 'palette' ? 1 : 0;
+    this.setPalette(s.palette);
+    // The effect composer's render target colour-manages the clear colour once
+    // more than the screen does, so it gets a pre-compensated copy.
+    this.bgDirect = new Color(s.background);
+    this.bgComposer = new Color().setRGB(this.bgDirect.r, this.bgDirect.g, this.bgDirect.b, SRGBColorSpace);
+    this.clearPath = null;
+    this.trails.damp = s.trails;
+    this.trails.enabled = s.trails > 0;
     u.uLength.value = s.length;
     u.uDispersal.value = s.dispersal;
     u.uRingSize.value = s.ringSize;
@@ -279,7 +374,12 @@ export class Visualizer {
     this.uniforms.uBass.value = bass;
     this.controls.update(dt);
     if (!this.width || !this.height) return;
-    if (this.bloom.enabled) this.composer.render(dt);
+    const composed = this.bloom.enabled || this.trails.enabled;
+    if (composed !== this.clearPath) {
+      this.renderer.setClearColor(composed ? this.bgComposer : this.bgDirect, 1);
+      this.clearPath = composed;
+    }
+    if (composed) this.composer.render(dt);
     else this.renderer.render(this.scene, this.camera);
   }
 }

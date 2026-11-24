@@ -2,7 +2,9 @@ import '@fontsource-variable/inconsolata/wdth.css';
 import './style.css';
 import { AudioEngine, SAMPLES } from './audio.js';
 import { Visualizer } from './visualizer.js';
-import { DEFAULTS, GROUPS, PARAMS, PRESETS, fromHash, loadStored, sanitize, store, toHash } from './settings.js';
+import { DEFAULTS, GROUPS, PARAMS, PRESETS, fromHash, loadStored, sameValue, sanitize, store, toHash } from './settings.js';
+import { describeStats, styleFromImage, styleFromVideo } from './style/extract.js';
+import { aiAvailable, aiStyle } from './style/ai.js';
 import { LIBRARY } from './library.js';
 import { lookupSong, searchSongs } from './catalog.js';
 import { FORMATS, MAX_SECONDS, Recorder, canRecord } from './recorder.js';
@@ -128,7 +130,7 @@ function syncControls() {
       setFill(input);
     }
   }
-  const same = (a, b) => Object.keys(DEFAULTS).every((k) => a[k] === b[k]);
+  const same = (a, b) => Object.keys(DEFAULTS).every((k) => sameValue(k, a[k], b[k]));
   for (const b of $('presets').children) {
     b.setAttribute('aria-pressed', String(same(settings, PRESETS[b.dataset.preset])));
   }
@@ -139,6 +141,7 @@ function applySettings(next) {
   settings = sanitize(next);
   vis.apply(settings);
   syncControls();
+  document.body.style.backgroundColor = settings.background;
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => store(settings), 300);
 }
@@ -183,7 +186,7 @@ async function shareLink() {
 }
 
 /* ---------- Side panels (Tune, Record) ---------- */
-const sides = { tune: $('tune-toggle'), record: $('record-toggle') };
+const sides = { tune: $('tune-toggle'), record: $('record-toggle'), style: $('style-toggle') };
 function setSide(name, open) {
   if (open) for (const other of Object.keys(sides)) if (other !== name) setSide(other, false);
   $(name).hidden = !open;
@@ -746,6 +749,161 @@ function discardClip() {
   $('clip').hidden = true;
 }
 
+/* ---------- Style from a reference ---------- */
+// Images and videos are analysed in the browser and applied at once; when AI
+// styles are available, Claude then refines the look. Links and descriptions
+// need Claude.
+let styleUndo = null;
+let styleAbort = null;
+let aiOn = false;
+let lastVisual = null; // { kind, images, measurements } from the latest image or video
+
+function paletteAt(stops, p) {
+  const t = 1 - Math.abs(2 * (((p % 1) + 1) % 1) - 1);
+  const x = t * (stops.length - 1);
+  const i = Math.min(stops.length - 2, Math.floor(x));
+  const f = x - i;
+  const c = (h, k) => parseInt(h.slice(1 + k * 2, 3 + k * 2), 16);
+  const mix = [0, 1, 2].map((k) => Math.round(c(stops[i], k) + (c(stops[i + 1], k) - c(stops[i], k)) * f));
+  return `#${mix.map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+}
+
+function styleNote(text) {
+  $('style-note').textContent = text || '';
+}
+
+function applyStyle(style, why) {
+  styleUndo = styleUndo || settings;
+  applySettings({ ...DEFAULTS, ...style.settings, colorMode: 'palette', palette: style.palette, background: style.background });
+  $('style-swatches').replaceChildren(...settings.palette.map((c) => {
+    const i = document.createElement('i');
+    i.style.background = c;
+    return i;
+  }));
+  $('style-name').textContent = style.name || 'Your style';
+  $('style-why').textContent = why || style.why || '';
+  $('style-result').hidden = false;
+}
+
+async function refineWithClaude(request, label) {
+  styleAbort?.abort();
+  styleAbort = new AbortController();
+  body.classList.add('styling');
+  styleNote(label);
+  try {
+    const style = await aiStyle(request, styleAbort.signal);
+    applyStyle(style);
+    styleNote('');
+    return true;
+  } catch (err) {
+    if (err.name !== 'AbortError') styleNote(err.message);
+    return false;
+  } finally {
+    body.classList.remove('styling');
+  }
+}
+
+async function styleFromFile(file) {
+  if (!started) begin(false);
+  setSide('style', true);
+  const isVideo = file.type.startsWith('video/');
+  styleNote(isVideo ? 'Reading the video…' : 'Reading the image…');
+  styleUndo = null;
+  try {
+    const result = isVideo ? await styleFromVideo(file) : await styleFromImage(file);
+    const zone = $('style-drop');
+    zone.classList.toggle('has-preview', !!result.preview);
+    if (result.preview) zone.style.setProperty('--preview', `url("${result.preview}")`);
+    applyStyle(result.style, `From the ${isVideo ? 'video' : 'image'}’s colours, contrast and detail.`);
+    lastVisual = { kind: isVideo ? 'video frames' : 'image', images: result.images, measurements: describeStats(result.stats) };
+    styleNote('');
+    if (aiOn && $('style-ai').checked) {
+      await refineWithClaude({ ...lastVisual, prompt: $('style-prompt').value.trim() }, 'Claude is refining it…');
+    }
+  } catch (err) {
+    styleNote(err.message || 'That file couldn’t be read.');
+  }
+}
+
+async function createStyle() {
+  const url = $('style-url').value.trim();
+  const prompt = $('style-prompt').value.trim();
+  if (!url && !prompt) {
+    if (lastVisual && aiOn) return refineWithClaude({ ...lastVisual }, 'Claude is refining it…');
+    styleNote('Drop an image or video, paste a link, or describe a mood.');
+    return;
+  }
+  if (!aiOn) {
+    styleNote('Links and descriptions need AI styles, which aren’t set up on this site yet. Images and videos work without it.');
+    return;
+  }
+  if (!started) begin(false);
+  styleUndo = null;
+  // A description alongside a dropped image refines that image's style.
+  const withVisual = prompt && !url && lastVisual ? lastVisual : {};
+  await refineWithClaude(
+    { kind: url ? 'website or image link' : withVisual.kind || 'description', ...withVisual, url: url || undefined, prompt: prompt || undefined },
+    url ? 'Reading the site and asking Claude…' : 'Asking Claude…',
+  );
+}
+
+function setupStylePanel() {
+  const zone = $('style-drop');
+  const input = $('style-file');
+  input.addEventListener('change', () => {
+    if (input.files[0]) styleFromFile(input.files[0]);
+    input.value = '';
+  });
+  zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('over'));
+  zone.addEventListener('drop', () => zone.classList.remove('over'));
+  $('style-go').addEventListener('click', createStyle);
+  $('style-prompt').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      createStyle();
+    }
+  });
+  $('style-url').addEventListener('keydown', (e) => e.key === 'Enter' && createStyle());
+  $('style-undo').addEventListener('click', () => {
+    if (!styleUndo) return;
+    applySettings(styleUndo);
+    styleUndo = null;
+    $('style-result').hidden = true;
+    styleNote('Back to the previous look.');
+  });
+  $('style-copy').addEventListener('click', shareLink);
+
+  // Paste an image (or a link while the panel is open) anywhere.
+  window.addEventListener('paste', (e) => {
+    const t = e.target;
+    if (t.tagName === 'TEXTAREA' || (t.tagName === 'INPUT' && t.type !== 'range')) return;
+    const file = [...(e.clipboardData?.files || [])].find((f) => /^(image|video)\//.test(f.type));
+    if (file) {
+      e.preventDefault();
+      styleFromFile(file);
+      return;
+    }
+    const text = e.clipboardData?.getData('text')?.trim();
+    if (text && /^https?:\/\//.test(text) && !$('style').hidden) {
+      e.preventDefault();
+      $('style-url').value = text;
+      createStyle();
+    }
+  });
+
+  aiAvailable().then((ok) => {
+    aiOn = ok;
+    $('style-ai-row').hidden = !ok;
+    if (!ok) {
+      $('style-url').disabled = $('style-prompt').disabled = true;
+      $('style-url').placeholder = 'Needs AI styles';
+      $('style-prompt').placeholder = 'Needs AI styles';
+      styleNote('Images and videos are styled right here. Links and descriptions need AI styles, which aren’t set up on this site yet.');
+    }
+  });
+}
+
 /* ---------- Start screen ---------- */
 const search = $('search');
 $('start-slot').append(search);
@@ -773,7 +931,7 @@ function bumpIdle() {
   body.classList.remove('idle');
   clearTimeout(idleTimer);
   idleTimer = setTimeout(() => {
-    const open = !$('tune').hidden || !$('record').hidden || !palette.hidden || $('keys').open;
+    const open = !$('tune').hidden || !$('record').hidden || !$('style').hidden || !palette.hidden || $('keys').open;
     const typing = document.activeElement?.tagName === 'INPUT' && document.activeElement.type !== 'range';
     if (started && (audio.playing || sp.playing) && !open && !typing) body.classList.add('idle');
   }, 3200);
@@ -787,6 +945,7 @@ function toggleFullscreen() {
 /* ---------- Wire up ---------- */
 buildParams();
 applySettings(settings);
+setupStylePanel();
 renderHome();
 renderNow();
 updateRecordPanel();
@@ -822,6 +981,7 @@ $('stop-live').addEventListener('click', () => {
   audio.stopLive();
 });
 $('tune-toggle').addEventListener('click', () => toggleSide('tune'));
+$('style-toggle').addEventListener('click', () => toggleSide('style'));
 $('record-toggle').addEventListener('click', () => (recorder.active ? stopRecording() : toggleSide('record')));
 document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => setSide(b.dataset.close, false)));
 $('randomize').addEventListener('click', randomize);
@@ -940,7 +1100,9 @@ window.addEventListener('drop', (e) => {
   e.preventDefault();
   dragDepth = 0;
   body.classList.remove('dragging');
-  playFiles(e.dataTransfer.files);
+  const visual = [...e.dataTransfer.files].find((f) => /^(image|video)\//.test(f.type));
+  if (visual) styleFromFile(visual);
+  else playFiles(e.dataTransfer.files);
 });
 
 // Clicking the visual returns keyboard shortcuts to the page
@@ -1001,6 +1163,7 @@ window.addEventListener('keydown', (e) => {
     case 'Escape':
       if (!palette.hidden) closePalette();
       else if (!$('record').hidden) setSide('record', false);
+      else if (!$('style').hidden) setSide('style', false);
       else if (!$('tune').hidden) setSide('tune', false);
       else body.classList.remove('hide-ui');
       break;
@@ -1038,6 +1201,14 @@ function loop(now) {
   if (uiClock > 0.12) {
     uiClock = 0;
     root.style.setProperty('--hue', String(Math.round(vis.hueStart)));
+    if (settings.colorMode === 'palette') {
+      const c = paletteAt(settings.palette, vis.hueStart / 360);
+      root.style.setProperty('--accent', c);
+      root.style.setProperty('--accent-soft', `${c}29`);
+    } else {
+      root.style.removeProperty('--accent');
+      root.style.removeProperty('--accent-soft');
+    }
     if (audio.mode === 'element' || sp.on) renderState();
     if (audio.mode === 'stream') {
       $('meter').style.setProperty('--lvl', `${Math.min(100, audio.level * 500).toFixed(0)}%`);

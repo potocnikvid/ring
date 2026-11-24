@@ -11,11 +11,17 @@ export const GROUPS = [
       { key: 'ringSize', label: 'Ring size', min: 0.5, max: 2, step: 0.05, value: 1 },
       { key: 'dispersal', label: 'Dispersal', min: 1, max: 3, step: 0.05, value: 1.5 },
       { key: 'pulse', label: 'Bass pulse', min: 0, max: 2, step: 0.05, value: 0.4 },
+      { key: 'symmetry', label: 'Symmetry', min: 0, max: 12, step: 1, value: 0 },
+      { key: 'twist', label: 'Twist', min: -0.3, max: 0.3, step: 0.01, value: 0 },
     ],
   },
   {
     name: 'Particles',
     params: [
+      {
+        key: 'shape', label: 'Shape', type: 'choice', value: 'cube',
+        options: [['cube', 'Cubes'], ['sphere', 'Spheres'], ['dot', 'Dots']],
+      },
       { key: 'particleSize', label: 'Size', min: 1, max: 15, step: 0.5, value: 5 },
       { key: 'sizeVar', label: 'Size variation', min: -1, max: 1, step: 0.05, value: 0 },
       { key: 'detail', label: 'Detail', min: 1, max: 20, step: 1, value: 18 },
@@ -28,11 +34,16 @@ export const GROUPS = [
       { key: 'length', label: 'Length', min: 1, max: 100, step: 1, value: 10 },
       { key: 'spacing', label: 'Spacing', min: 0, max: 100, step: 1, value: 20 },
       { key: 'fade', label: 'Depth fade', min: 0, max: 1, step: 0.05, value: 0.35 },
+      { key: 'trails', label: 'Trails', min: 0, max: 0.95, step: 0.05, value: 0 },
     ],
   },
   {
     name: 'Color',
     params: [
+      {
+        key: 'colorMode', label: 'Colors', type: 'choice', value: 'hue',
+        options: [['hue', 'Rainbow'], ['palette', 'Palette']],
+      },
       { key: 'hueRange', label: 'Hue range', min: 0, max: 360, step: 1, value: 90 },
       { key: 'hueSpeed', label: 'Color speed', min: 0, max: 5, step: 0.1, value: 1 },
       { key: 'glow', label: 'Glow', min: 0, max: 2, step: 0.05, value: 0.6 },
@@ -47,7 +58,15 @@ export const GROUPS = [
   },
 ];
 
-export const PARAMS = Object.fromEntries(GROUPS.flatMap((g) => g.params).map((p) => [p.key, p]));
+// Set by styles rather than sliders: the palette the ring is coloured from
+// (in Palette mode) and the background colour.
+export const DEFAULT_PALETTE = ['#1b0f3b', '#5b2a86', '#c8457a', '#ff8a4c', '#ffd36e'];
+const HIDDEN = [
+  { key: 'palette', type: 'palette', value: DEFAULT_PALETTE },
+  { key: 'background', type: 'color', value: '#000000' },
+];
+
+export const PARAMS = Object.fromEntries([...GROUPS.flatMap((g) => g.params), ...HIDDEN].map((p) => [p.key, p]));
 export const DEFAULTS = Object.fromEntries(Object.values(PARAMS).map((p) => [p.key, p.value]));
 
 export const PRESETS = {
@@ -76,6 +95,15 @@ export const PRESETS = {
 };
 
 const clamp = (v, p) => Math.min(p.max, Math.max(p.min, v));
+const HEX = /^#?([0-9a-f]{6})$/i;
+const toHex = (v) => {
+  const m = HEX.exec(String(v).trim());
+  return m ? `#${m[1].toLowerCase()}` : null;
+};
+export function samePalette(a, b) {
+  return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((c, i) => c === b[i]);
+}
+export const sameValue = (k, a, b) => (PARAMS[k]?.type === 'palette' ? samePalette(a, b) : a === b);
 
 export function sanitize(input) {
   const out = { ...DEFAULTS };
@@ -84,6 +112,10 @@ export function sanitize(input) {
     if (!p) continue;
     if (p.type === 'toggle') out[k] = v === true || v === '1' || v === 'true';
     else if (p.type === 'choice') out[k] = p.options.some(([o]) => o === v) ? v : p.value;
+    else if (p.type === 'palette') {
+      const list = (Array.isArray(v) ? v : String(v).split(/[-,\s]+/)).map(toHex).filter(Boolean).slice(0, 8);
+      out[k] = list.length >= 2 ? list : p.value;
+    } else if (p.type === 'color') out[k] = toHex(v) || p.value;
     else if (Number.isFinite(Number(v))) out[k] = clamp(Number(v), p);
   }
   return out;
@@ -93,8 +125,10 @@ export function sanitize(input) {
 export function toHash(settings, track) {
   const q = new URLSearchParams();
   for (const [k, v] of Object.entries(settings)) {
-    if (v === DEFAULTS[k]) continue;
-    if (typeof v === 'boolean') q.set(k, v ? '1' : '0');
+    if (sameValue(k, v, DEFAULTS[k])) continue;
+    if (Array.isArray(v)) q.set(k, v.map((c) => c.slice(1)).join('-'));
+    else if (PARAMS[k]?.type === 'color') q.set(k, v.slice(1));
+    else if (typeof v === 'boolean') q.set(k, v ? '1' : '0');
     else if (typeof v === 'string') q.set(k, v);
     else q.set(k, String(+v.toFixed(3)));
   }

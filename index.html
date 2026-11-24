@@ -24,6 +24,7 @@
       <h1 class="wordmark">ring</h1>
       <div class="search-slot" id="top-slot"></div>
       <div class="corner">
+        <button class="chip" id="style-toggle" aria-expanded="false" aria-controls="style">Style</button>
         <button class="chip rec-chip" id="record-toggle" aria-expanded="false" aria-controls="record">
           <span class="dot" aria-hidden="true"></span>Record
         </button>
@@ -116,6 +117,45 @@
         <button class="text-btn" id="randomize">Randomize</button>
         <button class="text-btn" id="share">Copy link</button>
         <button class="text-btn" id="reset">Reset</button>
+      </div>
+    </aside>
+
+    <aside id="style" class="panel side style-panel" aria-label="Style the ring from a reference" hidden>
+      <div class="panel-head">
+        <h2>Style from anything</h2>
+        <button class="icon-btn" data-close="style" aria-label="Close style panel">
+          <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
+      </div>
+      <div class="style-body">
+        <label class="drop-zone" id="style-drop">
+          <input type="file" id="style-file" accept="image/*,video/*" />
+          <strong>Drop an image or video</strong>
+          <span>or click to choose one, or paste it</span>
+        </label>
+        <label class="field">
+          <span>Website or image link</span>
+          <input type="url" id="style-url" placeholder="https://" autocomplete="off" spellcheck="false" />
+        </label>
+        <label class="field">
+          <span>Or describe it</span>
+          <textarea id="style-prompt" rows="2" placeholder="Neon rain on a Tokyo street at 3am"></textarea>
+        </label>
+        <div class="param toggle" id="style-ai-row">
+          <label for="style-ai">Interpret with Claude</label>
+          <input type="checkbox" class="switch" id="style-ai" checked />
+        </div>
+        <p class="note" id="style-note" role="status"></p>
+        <button class="primary" id="style-go">Create style</button>
+      </div>
+      <div class="style-result" id="style-result" hidden>
+        <div class="swatches" id="style-swatches" aria-hidden="true"></div>
+        <strong id="style-name"></strong>
+        <p class="note" id="style-why"></p>
+        <div class="clip-actions">
+          <button class="text-btn" id="style-undo">Undo</button>
+          <button class="text-btn" id="style-copy">Copy link</button>
+        </div>
       </div>
     </aside>
 
