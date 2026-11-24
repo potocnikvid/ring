@@ -342,7 +342,17 @@ body:not(.started) .topbar > * { pointer-events: none; }
 .param { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 2px 8px; padding: 4px 0; }
 .param label { font-size: 13.5px; }
 .param output { color: var(--mute); font-size: 13px; min-width: 4ch; text-align: right; }
-.param .range, .param .segmented { grid-column: 1 / -1; }
+.param .range, .param .segmented, .param .preset-select, .param .preset-nav { grid-column: 1 / -1; }
+.preset-select {
+  min-width: 0;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--ctl-r);
+  background: rgb(0 0 0 / 0.4);
+  font-size: 13px;
+}
+.preset-nav { display: flex; gap: 2px; margin-left: -8px; }
 
 .segmented {
   display: grid;

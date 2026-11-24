@@ -41,6 +41,16 @@ The Style panel turns a reference into a look: palette, background, particle sha
 
 AI styles need `ANTHROPIC_API_KEY` in the Vercel project's environment variables (and in `.env.local` for `npm run dev`, which serves `api/` itself). Without it, the panel says so and image/video styles still work. The function blocks private and local addresses, caps sizes, and rate-limits each IP (best effort).
 
+## MilkDrop inside the 3D scene
+
+The classic MilkDrop visualizer ([Butterchurn](https://github.com/jberg/butterchurn), MIT) runs off-screen on the same audio, and its image becomes a live texture in the three.js scene:
+
+- **Tunnel walls**: a long tube around the ring, flowing toward the camera, faster on bass.
+- **Backdrop**: a MilkDrop sky surrounding the scene.
+- **Particles take its colours**: each particle samples MilkDrop at its spot on screen.
+
+Tune → MilkDrop picks the layer, one of 100 presets (`M` for the next one), and strengths. Butterchurn and the base preset pack (~170 kB gzipped together) load only the first time MilkDrop is switched on. AI styles can choose MilkDrop and a preset for psychedelic references. The presets are community works redistributed with Butterchurn; check their individual licensing before commercial use.
+
 ## Recording
 
 Record (`V`) captures the canvas only, never the controls, with the audio feeding the ring. Frames: Screen, Square 1080×1080, Vertical 1080×1920, 1080p. Output is MP4 (H.264/AAC) where the browser supports it, WebM otherwise, at about 9 Mbps. Up to 10 minutes.

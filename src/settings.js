@@ -1,3 +1,5 @@
+import { DEFAULT_MILK_PRESET, MILK_PRESETS } from './milkdrop-presets.js';
+
 // Every visual parameter, grouped the way the Tune panel shows them.
 // Defaults for the original controls match ring v1.
 export const GROUPS = [
@@ -47,6 +49,18 @@ export const GROUPS = [
       { key: 'hueRange', label: 'Hue range', min: 0, max: 360, step: 1, value: 90 },
       { key: 'hueSpeed', label: 'Color speed', min: 0, max: 5, step: 0.1, value: 1 },
       { key: 'glow', label: 'Glow', min: 0, max: 2, step: 0.05, value: 0.6 },
+    ],
+  },
+  {
+    name: 'MilkDrop',
+    params: [
+      {
+        key: 'milkLayer', label: 'Layer', type: 'choice', value: 'off',
+        options: [['off', 'Off'], ['walls', 'Tunnel walls'], ['backdrop', 'Backdrop']],
+      },
+      { key: 'milkPreset', label: 'Preset', type: 'preset', value: DEFAULT_MILK_PRESET, options: MILK_PRESETS },
+      { key: 'milkAmount', label: 'Layer strength', min: 0, max: 1, step: 0.05, value: 0.6 },
+      { key: 'milkColors', label: 'Particles take its colours', min: 0, max: 1, step: 0.05, value: 0 },
     ],
   },
   {
@@ -112,6 +126,7 @@ export function sanitize(input) {
     if (!p) continue;
     if (p.type === 'toggle') out[k] = v === true || v === '1' || v === 'true';
     else if (p.type === 'choice') out[k] = p.options.some(([o]) => o === v) ? v : p.value;
+    else if (p.type === 'preset') out[k] = p.options.includes(v) ? v : p.value;
     else if (p.type === 'palette') {
       const list = (Array.isArray(v) ? v : String(v).split(/[-,\s]+/)).map(toHex).filter(Boolean).slice(0, 8);
       out[k] = list.length >= 2 ? list : p.value;

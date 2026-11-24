@@ -15,6 +15,7 @@ const MAX_PROMPT = 2000;
 function paramSchema(p) {
   if (p.type === 'toggle') return { type: 'boolean' };
   if (p.type === 'choice') return { type: 'string', enum: p.options.map(([v]) => v) };
+  if (p.type === 'preset') return { type: 'string', enum: p.options };
   const integer = Number.isInteger(p.step) && Number.isInteger(p.min);
   return { type: integer ? 'integer' : 'number' };
 }
@@ -65,10 +66,16 @@ function describeParams() {
     glow: 'Bloom strength. 0 = flat, 1.5 = neon.',
     beatMotion: 'Spin and zoom kicks on each beat.',
     autoRotate: 'Constant slow camera orbit speed.',
+    milkLayer: 'Adds a classic MilkDrop psychedelic feedback visual inside the 3D scene: walls = flying through a MilkDrop tunnel around the ring; backdrop = a MilkDrop sky behind it; off = clean.',
+    milkPreset: 'Which MilkDrop preset (names listed below hint at the look).',
+    milkAmount: 'Strength of the MilkDrop layer.',
+    milkColors: 'How much the ring particles take their colours from MilkDrop instead of the palette.',
   };
   return settingKeys.map((k) => {
     const p = PARAMS[k];
-    const range = p.type === 'choice' ? p.options.map(([v]) => v).join(' | ') : p.type === 'toggle' ? 'true | false' : `${p.min} to ${p.max}`;
+    const range = p.type === 'choice' ? p.options.map(([v]) => v).join(' | ')
+      : p.type === 'preset' ? 'a preset name from the list below'
+        : p.type === 'toggle' ? 'true | false' : `${p.min} to ${p.max}`;
     return `- ${k} (${range}, default ${p.value}): ${notes[k] || p.label}`;
   }).join('\n');
 }
@@ -86,8 +93,13 @@ How to work:
 - Symmetry and twist are strong signatures: use symmetry for mandala, floral, ornamental or logo-like references, twist for swirling or spiralling ones. Leave them at 0 otherwise.
 - Measurements may be included (0-100). Treat them as hints, not rules.
 
+- MilkDrop suits psychedelic, liquid, cosmic, kaleidoscopic, rave or retro-computer references. For clean, minimal, corporate or calm references keep milkLayer off and milkColors 0. When you use it, pick the preset whose name best matches the reference.
+
 Parameters (stay inside each range):
-${describeParams()}`;
+${describeParams()}
+
+MilkDrop presets:
+${PARAMS.milkPreset.options.join('\n')}`;
 
 /* ---------- Website reading (with SSRF guards) ---------- */
 function privateAddress(ip) {
