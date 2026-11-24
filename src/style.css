@@ -492,6 +492,17 @@ body.idle .rec-pill { opacity: 0.35; }
 .meta { min-width: 0; display: grid; }
 .meta .title { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .meta .sub { color: var(--mute); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Live input level, so it's obvious whether any sound is arriving */
+.meter {
+  --lvl: 0%;
+  display: none;
+  width: 72px;
+  height: 3px;
+  margin-top: 4px;
+  border-radius: 3px;
+  background: linear-gradient(to right, var(--accent) var(--lvl), rgb(255 255 255 / 0.14) var(--lvl));
+}
+body.live .meter { display: block; }
 
 .transport { display: flex; align-items: center; gap: 2px; }
 .play { width: 44px; height: 44px; border-radius: 50%; background: var(--ink); color: #000; }
