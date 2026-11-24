@@ -24,6 +24,7 @@ export class AudioEngine extends EventTarget {
     this.freqData = new Uint8Array(SAMPLES / 2);
     this.specData = new Uint8Array(SAMPLES).fill(128);
     this.bass = 0;
+    this.level = 0;
     this.beat = false;
     this._fast = 0;
     this._slow = 0;
@@ -149,7 +150,13 @@ export class AudioEngine extends EventTarget {
   async useDisplayAudio(kind) {
     // Ask before any other await: browsers only allow this directly from a click.
     const stream = await navigator.mediaDevices.getDisplayMedia({
-      video: { displaySurface: kind === 'system' ? 'monitor' : 'browser' },
+      // The video is never shown, so ask for as little of it as possible.
+      video: {
+        displaySurface: kind === 'system' ? 'monitor' : 'browser',
+        frameRate: { ideal: 1, max: 5 },
+        width: { max: 640 },
+        height: { max: 360 },
+      },
       audio: RAW_INPUT,
       systemAudio: 'include',
       selfBrowserSurface: 'exclude',
@@ -158,16 +165,21 @@ export class AudioEngine extends EventTarget {
     });
     await this.unlock();
     const audioTracks = stream.getAudioTracks();
-    stream.getVideoTracks().forEach((t) => t.stop());
     if (!audioTracks.length) {
+      stream.getTracks().forEach((t) => t.stop());
       throw new Error(
         kind === 'system'
           ? 'No audio came through. Pick “Entire screen” and turn on “Share system audio”.'
           : 'No audio came through. Pick a tab and turn on “Share tab audio”.',
       );
     }
+    // Keep the video track running (just disabled) for as long as we listen. On
+    // macOS, Chrome captures computer audio through the same screen capture, and
+    // stopping the video can leave the audio track live but silent.
+    stream.getVideoTracks().forEach((t) => { t.enabled = false; });
+    console.info('[ring] sharing', kind, audioTracks[0].label, audioTracks[0].getSettings());
     const title = kind === 'system' ? 'Computer audio' : 'Shared tab';
-    this._useStream(new MediaStream(audioTracks), kind, { id: kind, title, subtitle: 'Live' });
+    this._useStream(stream, kind, { id: kind, title, subtitle: 'Live' });
   }
 
   static get canCaptureDisplay() {
@@ -201,11 +213,14 @@ export class AudioEngine extends EventTarget {
     this.mode = 'stream';
     this.streamKind = kind;
     this.track = track;
-    stream.getAudioTracks()[0]?.addEventListener('ended', () => {
-      if (this.stream !== stream) return;
-      this.stopLive();
-      this._emit('streamended');
-    });
+    // Either track ending (e.g. the browser's "Stop sharing" bar) ends listening.
+    for (const track of stream.getTracks()) {
+      track.addEventListener('ended', () => {
+        if (this.stream !== stream) return;
+        this.stopLive();
+        this._emit('streamended');
+      });
+    }
     this._emit('track', track);
     this._emit('state');
   }
@@ -224,9 +239,17 @@ export class AudioEngine extends EventTarget {
     this.beat = false;
     if (!this.analyser || !this.playing) {
       this.bass *= 0.9;
+      this.level = 0;
       return false;
     }
     this.analyser.getByteTimeDomainData(this.timeData);
+    let sq = 0;
+    for (let i = 0; i < SAMPLES; i += 4) {
+      const v = this.timeData[i] - 128;
+      sq += v * v;
+    }
+    const rms = Math.sqrt(sq / (SAMPLES / 4)) / 128;
+    this.level += (rms - this.level) * 0.3;
     this.analyser.getByteFrequencyData(this.freqData);
 
     // Spectrum laid around the circle, mirrored so it stays symmetric, on a log

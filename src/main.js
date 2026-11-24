@@ -614,8 +614,17 @@ function renderNow() {
 }
 
 audio.addEventListener('state', renderState);
+// Live sources that stay silent get a hint after a few seconds.
+const live = { since: 0, heard: false, warned: false };
+const SILENCE_HINTS = {
+  system: 'The ring is listening, but no sound is coming through. If the music plays in this browser (SoundCloud, YouTube), choose “A browser tab” instead. Otherwise share again with “Share system audio” on.',
+  tab: 'No sound from the shared tab yet. Press play there, and make sure “Share tab audio” was on.',
+  input: 'No sound from this input yet. Check its level, or pick another input.',
+};
+
 audio.addEventListener('track', (e) => {
   const track = e.detail;
+  if (audio.mode === 'stream') Object.assign(live, { since: performance.now(), heard: false, warned: false });
   if (audio.mode === 'stream' && spotify.isConnected()) startSpotify();
   if (audio.mode !== 'stream') stopSpotify();
   if (audio.mode === 'element') pushRecent(track);
@@ -796,9 +805,14 @@ spotify.completeConnect().then((done) => {
 }).catch((err) => toast(err.message));
 
 $('start-btn').addEventListener('click', () => begin());
-$('start-system').addEventListener('click', () => (spotify.isConnected() ? listenWithSpotify() : goLive(AudioEngine.canCaptureDisplay ? 'system' : 'input')));
+// Opens the source tiles, so people pick a tab (music in this browser) or
+// computer audio (desktop apps) rather than guessing.
+$('start-system').addEventListener('click', () => {
+  if (spotify.isConnected()) return listenWithSpotify();
+  begin(false);
+  openPalette();
+});
 if (!AudioEngine.canCaptureDisplay && !AudioEngine.canUseInput) $('start-system').hidden = true;
-else if (!AudioEngine.canCaptureDisplay) $('start-system').textContent = 'Use the microphone';
 
 $('play').addEventListener('click', togglePlay);
 $('next').addEventListener('click', next);
@@ -1025,6 +1039,14 @@ function loop(now) {
     uiClock = 0;
     root.style.setProperty('--hue', String(Math.round(vis.hueStart)));
     if (audio.mode === 'element' || sp.on) renderState();
+    if (audio.mode === 'stream') {
+      $('meter').style.setProperty('--lvl', `${Math.min(100, audio.level * 500).toFixed(0)}%`);
+      if (audio.level > 0.01) live.heard = true;
+      if (!live.heard && !live.warned && now - live.since > 5000) {
+        live.warned = true;
+        toast(SILENCE_HINTS[audio.streamKind] || SILENCE_HINTS.input, 12000);
+      }
+    }
     if (recorder.active) {
       $('rec-time').textContent = fmtTime(recorder.elapsed);
       if (recorder.elapsed >= MAX_SECONDS) stopRecording();
