@@ -1,9 +1,11 @@
 // One analyser fed by either an <audio> element (library, catalog previews, local
-// files) or a MediaStream (microphone, shared tab / system audio).
+// files) or a MediaStream (microphone / audio input, shared tab, whole-computer audio).
 //
 // The element streams with range requests instead of p5's loadSound(), which
-// downloaded and decoded the whole MP3 (3–12 MB) before anything could play.
+// downloaded and decoded the whole file before anything could play.
 export const SAMPLES = 1024;
+
+const RAW_INPUT = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
 
 export class AudioEngine extends EventTarget {
   constructor() {
@@ -13,15 +15,20 @@ export class AudioEngine extends EventTarget {
     this.el.preload = 'none';
     this.ctx = null;
     this.mode = 'idle'; // idle | element | stream
+    this.streamKind = null; // input | tab | system
     this.track = null;
     this.stream = null;
     this.streamSource = null;
     this._volume = 0.5;
     this.timeData = new Uint8Array(SAMPLES);
     this.freqData = new Uint8Array(SAMPLES / 2);
+    this.specData = new Uint8Array(SAMPLES).fill(128);
     this.bass = 0;
+    this.beat = false;
     this._fast = 0;
     this._slow = 0;
+    this._lastBeat = 0;
+    this._specMap = buildSpectrumMap();
 
     for (const ev of ['play', 'pause', 'timeupdate', 'durationchange', 'waiting', 'playing', 'loadstart']) {
       this.el.addEventListener(ev, () => this._emit('state'));
@@ -47,9 +54,12 @@ export class AudioEngine extends EventTarget {
       this.analyser.smoothingTimeConstant = 0.8;
       this.gain = this.ctx.createGain();
       this.gain.gain.value = this._volume;
-      // Analyse before the volume stage so the ring still reacts when muted.
+      // Recording tap: taken before the volume stage, like the analyser,
+      // so a muted tab still records at full level.
+      this.recordTap = this.ctx.createMediaStreamDestination();
       this.elSource = this.ctx.createMediaElementSource(this.el);
       this.elSource.connect(this.analyser);
+      this.elSource.connect(this.recordTap);
       this.elSource.connect(this.gain);
       this.gain.connect(this.ctx.destination);
     }
@@ -77,11 +87,15 @@ export class AudioEngine extends EventTarget {
     if (this.gain) this.gain.gain.setTargetAtTime(this._volume, this.ctx.currentTime, 0.02);
     this._emit('state');
   }
+  get recordingStream() {
+    return this.recordTap?.stream ?? null;
+  }
 
   async playTrack(track) {
     await this.unlock();
     this._stopStream();
     this.mode = 'element';
+    this.streamKind = null;
     this.track = track;
     this.el.src = track.src;
     this._emit('track', track);
@@ -111,58 +125,85 @@ export class AudioEngine extends EventTarget {
     this.seek(this.currentTime + dt);
   }
 
-  async useMicrophone() {
+  // Microphone, or any audio input: an audio interface, or a loopback device such
+  // as BlackHole / Loopback that carries the computer's own sound.
+  async useInput(deviceId) {
     // Ask before any other await, while the click still counts as a user gesture.
     const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      audio: deviceId ? { ...RAW_INPUT, deviceId: { exact: deviceId } } : RAW_INPUT,
     });
     await this.unlock();
-    this._useStream(stream, { id: 'mic', title: 'Microphone', subtitle: 'Live input' });
+    const label = stream.getAudioTracks()[0]?.label || 'Microphone';
+    this._useStream(stream, 'input', { id: 'input', title: label.replace(/\s*\([^)]*\)\s*$/, ''), subtitle: 'Live input' });
   }
 
-  // Lets people visualise Spotify, YouTube, Apple Music… playing in another tab.
-  async useTabAudio() {
+  static async listInputs() {
+    if (!navigator.mediaDevices?.enumerateDevices) return [];
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return devices.filter((d) => d.kind === 'audioinput' && d.deviceId && d.deviceId !== 'default' && d.deviceId !== 'communications');
+  }
+
+  // kind 'tab': a browser tab (Spotify web player, YouTube…).
+  // kind 'system': the whole screen with "Share system audio", which also covers
+  // desktop apps (Chrome 141+ on macOS 14.2+, Chrome / Edge on Windows).
+  async useDisplayAudio(kind) {
     // Ask before any other await: browsers only allow this directly from a click.
     const stream = await navigator.mediaDevices.getDisplayMedia({
-      video: true,
-      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      video: { displaySurface: kind === 'system' ? 'monitor' : 'browser' },
+      audio: RAW_INPUT,
       systemAudio: 'include',
       selfBrowserSurface: 'exclude',
+      surfaceSwitching: 'include',
+      monitorTypeSurfaces: 'include',
     });
     await this.unlock();
     const audioTracks = stream.getAudioTracks();
     stream.getVideoTracks().forEach((t) => t.stop());
     if (!audioTracks.length) {
-      throw new Error('No audio came through. Pick a tab and turn on “Share tab audio”.');
+      throw new Error(
+        kind === 'system'
+          ? 'No audio came through. Pick “Entire screen” and turn on “Share system audio”.'
+          : 'No audio came through. Pick a tab and turn on “Share tab audio”.',
+      );
     }
-    const label = audioTracks[0].label || 'Shared audio';
-    this._useStream(new MediaStream(audioTracks), { id: 'tab', title: 'Shared tab audio', subtitle: label });
+    const title = kind === 'system' ? 'Computer audio' : 'Shared tab';
+    this._useStream(new MediaStream(audioTracks), kind, { id: kind, title, subtitle: 'Live' });
   }
 
-  static get canCaptureTab() {
+  static get canCaptureDisplay() {
     // Firefox, Safari and mobile browsers don't capture audio via getDisplayMedia.
     const ua = navigator.userAgent;
     const safari = /Safari/.test(ua) && !/Chrome|Chromium|Edg\//.test(ua);
     return !!navigator.mediaDevices?.getDisplayMedia && !safari && !/Firefox|iPhone|iPad|Android/.test(ua);
   }
-  static get canUseMic() {
+  static get canUseInput() {
     return !!navigator.mediaDevices?.getUserMedia;
   }
 
-  _useStream(stream, track) {
+  stopLive() {
+    if (this.mode !== 'stream') return;
+    this._stopStream();
+    this.mode = 'idle';
+    this.streamKind = null;
+    this.track = null;
+    this._emit('track', null);
+    this._emit('state');
+  }
+
+  _useStream(stream, kind, track) {
     this.el.pause();
     this._stopStream();
     this.stream = stream;
-    // Not connected to the speakers: the tab or room is already audible.
+    // Not connected to the speakers: the tab, app or room is already audible.
     this.streamSource = this.ctx.createMediaStreamSource(stream);
     this.streamSource.connect(this.analyser);
+    this.streamSource.connect(this.recordTap);
     this.mode = 'stream';
+    this.streamKind = kind;
     this.track = track;
     stream.getAudioTracks()[0]?.addEventListener('ended', () => {
       if (this.stream !== stream) return;
-      this._stopStream();
-      this.mode = 'idle';
-      this._emit('state');
+      this.stopLive();
       this._emit('streamended');
     });
     this._emit('track', track);
@@ -177,22 +218,49 @@ export class AudioEngine extends EventTarget {
     this.streamSource = null;
   }
 
-  // Fills timeData with the current waveform and updates the bass envelope.
+  // Reads the analyser: waveform, spectrum, bass envelope and beats.
   // Returns false when there's nothing live to read.
-  sample() {
+  sample(now = performance.now()) {
+    this.beat = false;
     if (!this.analyser || !this.playing) {
       this.bass *= 0.9;
       return false;
     }
     this.analyser.getByteTimeDomainData(this.timeData);
     this.analyser.getByteFrequencyData(this.freqData);
+
+    // Spectrum laid around the circle, mirrored so it stays symmetric, on a log
+    // scale so bass and treble get similar room. Silence sits at the waveform's
+    // resting radius and loud bins push outward.
+    const map = this._specMap;
+    for (let i = 0; i < SAMPLES; i++) this.specData[i] = 128 + (this.freqData[map[i]] * 127) / 255;
+
     let sum = 0;
     for (let i = 1; i <= 8; i++) sum += this.freqData[i]; // ≈ 40–350 Hz
     const level = sum / (8 * 255);
     this._fast += (level - this._fast) * 0.5;
     this._slow += (level - this._slow) * 0.03;
     const kick = Math.min(1, Math.max(0, (this._fast - this._slow) * 4));
+    if (kick > 0.55 && this.bass < 0.5 && now - this._lastBeat > 280) {
+      this.beat = true;
+      this._lastBeat = now;
+    }
     this.bass = Math.max(kick, this.bass * 0.88);
     return true;
   }
+}
+
+function buildSpectrumMap() {
+  const bins = SAMPLES / 2;
+  const lo = 2; // skip DC
+  const hi = Math.floor(bins * 0.7); // the top of the range is mostly empty
+  const map = new Uint16Array(SAMPLES);
+  for (let i = 0; i < SAMPLES; i++) {
+    const half = i < SAMPLES / 2 ? i : SAMPLES - 1 - i; // mirror
+    const x = half / (SAMPLES / 2 - 1);
+    map[i] = Math.round(lo * Math.pow(hi / lo, x));
+  }
+  // Rotate so the bass sits at the bottom of the ring.
+  const shift = SAMPLES / 4;
+  return Uint16Array.from({ length: SAMPLES }, (_, i) => map[(i + shift) % SAMPLES]);
 }

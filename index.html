@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>ring</title>
-    <meta name="description" content="A 3D audio visualiser. Play the library, search any song, drop in a file, or visualise your mic or another tab." />
+    <meta name="description" content="A 3D audio visualiser. Search any song, play your files, or visualise Spotify and anything else your computer plays. Record clips to share." />
     <meta property="og:title" content="ring" />
     <meta property="og:description" content="A 3D audio visualiser that turns any song into a tunnel of light." />
     <meta property="og:type" content="website" />
@@ -20,13 +20,90 @@
   <body>
     <canvas id="stage" aria-label="Audio visualisation. Drag to rotate, scroll to zoom, double-click to reset the view."></canvas>
 
-    <h1 class="wordmark" aria-label="ring">ring</h1>
+    <header class="topbar">
+      <h1 class="wordmark">ring</h1>
+      <div class="search-slot" id="top-slot"></div>
+      <div class="corner">
+        <button class="chip rec-chip" id="record-toggle" aria-expanded="false" aria-controls="record">
+          <span class="dot" aria-hidden="true"></span>Record
+        </button>
+        <button class="chip" id="tune-toggle" aria-expanded="false" aria-controls="tune">Tune</button>
+      </div>
+    </header>
 
-    <div class="corner">
-      <button class="chip" id="tune-toggle" aria-expanded="false" aria-controls="tune">Tune</button>
+    <!-- The search box lives on the start screen first, then moves to the top bar. -->
+    <div class="search" id="search">
+      <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" /><path d="M16 16l4.5 4.5" /></svg>
+      <input
+        id="q"
+        type="search"
+        role="combobox"
+        aria-expanded="false"
+        aria-controls="palette"
+        aria-autocomplete="list"
+        placeholder="Search any song or artist"
+        autocomplete="off"
+        spellcheck="false"
+      />
+      <kbd class="slash" aria-hidden="true">/</kbd>
+      <div id="palette" class="panel palette" hidden>
+        <div id="palette-home">
+          <div class="tiles" role="group" aria-label="Listen to">
+            <label class="tile" id="tile-files">
+              <input type="file" id="file-input" accept="audio/*" multiple />
+              <strong>Your files</strong>
+              <span>Pick or drop audio</span>
+            </label>
+            <button class="tile" id="tile-tab">
+              <strong>A browser tab</strong>
+              <span>YouTube, SoundCloud, web players</span>
+            </button>
+            <button class="tile" id="tile-system">
+              <strong>Computer audio</strong>
+              <span>Any app, including Spotify</span>
+            </button>
+            <button class="tile" id="tile-input">
+              <strong>Microphone or input</strong>
+              <span>The room, or a loopback device</span>
+            </button>
+            <button class="tile tile-spotify" id="tile-spotify" hidden>
+              <strong>Spotify</strong>
+              <span id="spotify-tile-text">Connect to see and control what’s playing</span>
+            </button>
+          </div>
+          <div class="inputs" id="inputs" hidden>
+            <label for="input-select">Input</label>
+            <select id="input-select"></select>
+            <p class="note">On a Mac, a loopback device like BlackHole carries any app’s sound here without screen sharing.</p>
+          </div>
+          <section class="section" id="recent-section" hidden>
+            <h3>Recently played</h3>
+            <ul class="tracks" role="listbox" id="recent-list" aria-label="Recently played"></ul>
+          </section>
+          <section class="section">
+            <h3>Library</h3>
+            <ul class="tracks" role="listbox" id="library-list" aria-label="Library"></ul>
+          </section>
+        </div>
+        <div id="palette-results" hidden>
+          <section class="section" id="lib-results-section" hidden>
+            <h3>In the library</h3>
+            <ul class="tracks" role="listbox" id="lib-results" aria-label="Library matches"></ul>
+          </section>
+          <section class="section" id="sp-results-section" hidden>
+            <h3>Spotify <span class="h-note">plays on your Spotify device</span></h3>
+            <ul class="tracks" role="listbox" id="sp-results" aria-label="Spotify results"></ul>
+          </section>
+          <section class="section">
+            <h3>Apple Music <span class="h-note">30-second previews</span></h3>
+            <p class="note" id="search-status" role="status"></p>
+            <ul class="tracks" role="listbox" id="am-results" aria-label="Apple Music previews"></ul>
+          </section>
+        </div>
+      </div>
     </div>
 
-    <aside id="tune" class="panel tune" aria-label="Tune the visual" hidden>
+    <aside id="tune" class="panel tune side" aria-label="Tune the visual" hidden>
       <div class="panel-head">
         <h2>Tune</h2>
         <button class="icon-btn" data-close="tune" aria-label="Close tune panel">
@@ -42,46 +119,41 @@
       </div>
     </aside>
 
-    <section id="sources" class="panel sources" aria-label="Choose music" hidden>
+    <aside id="record" class="panel record side" aria-label="Record a clip" hidden>
       <div class="panel-head">
-        <div class="tabs" role="tablist" aria-label="Music sources">
-          <button role="tab" aria-selected="true" aria-controls="src-library" id="tab-library">Library</button>
-          <button role="tab" aria-selected="false" aria-controls="src-search" id="tab-search">Search</button>
-          <button role="tab" aria-selected="false" aria-controls="src-live" id="tab-live">Live</button>
-        </div>
-        <button class="icon-btn" data-close="sources" aria-label="Close music panel">
+        <h2>Record a clip</h2>
+        <button class="icon-btn" data-close="record" aria-label="Close record panel">
           <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></svg>
         </button>
       </div>
-
-      <div role="tabpanel" id="src-library" aria-labelledby="tab-library" class="tabpanel">
-        <ol class="tracks" id="library-list"></ol>
-        <label class="file-row">
-          <input type="file" id="file-input" accept="audio/*" multiple />
-          <span>Play files from your device</span>
-          <small>or drop them anywhere on the page</small>
-        </label>
+      <div class="record-body">
+        <fieldset class="group">
+          <legend>Frame</legend>
+          <div class="segmented" id="formats" role="radiogroup" aria-label="Frame"></div>
+        </fieldset>
+        <div class="param toggle">
+          <label for="rec-audio">Include sound</label>
+          <input type="checkbox" class="switch" id="rec-audio" checked />
+        </div>
+        <p class="note" id="rec-note">Records the visual only, never the controls. Up to 10 minutes.</p>
+        <button class="primary" id="rec-start"><span class="dot" aria-hidden="true"></span>Start recording</button>
       </div>
-
-      <div role="tabpanel" id="src-search" aria-labelledby="tab-search" class="tabpanel" hidden>
-        <form class="search" id="search-form" role="search">
-          <input type="search" id="search-input" placeholder="Search songs or artists" autocomplete="off" aria-label="Search songs or artists" />
-        </form>
-        <p class="note" id="search-status">Plays 30-second previews from Apple Music.</p>
-        <ol class="tracks" id="search-list"></ol>
+      <div class="clip" id="clip" hidden>
+        <video id="clip-video" playsinline controls muted loop></video>
+        <p class="clip-meta" id="clip-meta"></p>
+        <div class="clip-actions">
+          <a class="primary" id="clip-save" download>Save video</a>
+          <button class="text-btn" id="clip-share" hidden>Share</button>
+          <button class="text-btn" id="clip-discard">Discard</button>
+        </div>
       </div>
+    </aside>
 
-      <div role="tabpanel" id="src-live" aria-labelledby="tab-live" class="tabpanel" hidden>
-        <button class="live-option" id="use-tab">
-          <strong>Visualise another tab</strong>
-          <span>Play Spotify, YouTube or Apple Music in another tab, pick it, and turn on “Share tab audio”.</span>
-        </button>
-        <button class="live-option" id="use-mic">
-          <strong>Use microphone</strong>
-          <span>React to whatever is playing in the room.</span>
-        </button>
-      </div>
-    </section>
+    <div class="rec-pill" id="rec-pill" hidden>
+      <span class="dot" aria-hidden="true"></span>
+      <span id="rec-time">0:00</span>
+      <button id="rec-stop">Stop</button>
+    </div>
 
     <footer class="player" aria-label="Player">
       <div class="now">
@@ -112,12 +184,12 @@
       </div>
 
       <div class="extras">
-        <a class="link" id="store-link" target="_blank" rel="noopener" hidden>Apple Music</a>
-        <label class="volume">
+        <a class="link" id="store-link" target="_blank" rel="noopener" hidden></a>
+        <button class="text-btn stop-live" id="stop-live" hidden>Stop listening</button>
+        <label class="volume" id="volume-wrap">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4zM16 9a4 4 0 010 6" /></svg>
           <input type="range" class="range" id="volume" min="0" max="1" step="0.01" value="0.5" aria-label="Volume" />
         </label>
-        <button class="chip" id="sources-toggle" aria-expanded="false" aria-controls="sources">Music</button>
         <button class="icon-btn" id="fullscreen" aria-label="Full screen">
           <svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>
         </button>
@@ -129,7 +201,11 @@
 
     <div class="start" id="start">
       <p class="start-word" aria-hidden="true">ring</p>
-      <button class="start-btn" id="start-btn">Start listening</button>
+      <div class="search-slot start-slot" id="start-slot"></div>
+      <div class="start-actions">
+        <button class="start-btn" id="start-btn">Play the library</button>
+        <button class="start-alt" id="start-system">Visualise my computer’s audio</button>
+      </div>
       <p class="start-hint">Headphones on. Drag to orbit the ring, pinch or scroll to zoom.</p>
     </div>
 
@@ -144,13 +220,15 @@
         </button>
       </div>
       <dl>
+        <dt><kbd>/</kbd></dt><dd>Search</dd>
         <dt><kbd>Enter</kbd></dt><dd>Play or pause</dd>
         <dt><kbd>Space</kbd></dt><dd>Back to the start of the track</dd>
         <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Seek 5 seconds</dd>
         <dt><kbd>↑</kbd> <kbd>↓</kbd></dt><dd>Volume</dd>
         <dt><kbd>N</kbd> <kbd>P</kbd></dt><dd>Next or previous track</dd>
+        <dt><kbd>V</kbd></dt><dd>Start or stop recording</dd>
         <dt><kbd>T</kbd></dt><dd>Tune panel</dd>
-        <dt><kbd>M</kbd></dt><dd>Music panel</dd>
+        <dt><kbd>S</kbd></dt><dd>Switch waveform / spectrum</dd>
         <dt><kbd>R</kbd></dt><dd>Randomize the look</dd>
         <dt><kbd>H</kbd></dt><dd>Hide the interface</dd>
         <dt><kbd>F</kbd></dt><dd>Full screen</dd>

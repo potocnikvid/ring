@@ -4,6 +4,10 @@ export const GROUPS = [
   {
     name: 'Shape',
     params: [
+      {
+        key: 'mode', label: 'Reacts to', type: 'choice', value: 'wave',
+        options: [['wave', 'Waveform'], ['spectrum', 'Spectrum']],
+      },
       { key: 'ringSize', label: 'Ring size', min: 0.5, max: 2, step: 0.05, value: 1 },
       { key: 'dispersal', label: 'Dispersal', min: 1, max: 3, step: 0.05, value: 1.5 },
       { key: 'pulse', label: 'Bass pulse', min: 0, max: 2, step: 0.05, value: 0.4 },
@@ -36,7 +40,10 @@ export const GROUPS = [
   },
   {
     name: 'Camera',
-    params: [{ key: 'autoRotate', label: 'Auto-rotate', min: 0, max: 5, step: 0.1, value: 0 }],
+    params: [
+      { key: 'beatMotion', label: 'Beat motion', min: 0, max: 1, step: 0.05, value: 0.3 },
+      { key: 'autoRotate', label: 'Auto-rotate', min: 0, max: 5, step: 0.1, value: 0 },
+    ],
   },
 ];
 
@@ -45,7 +52,7 @@ export const DEFAULTS = Object.fromEntries(Object.values(PARAMS).map((p) => [p.k
 
 export const PRESETS = {
   Ring: { ...DEFAULTS },
-  Classic: { ...DEFAULTS, pulse: 0, fade: 0, glow: 0 },
+  Classic: { ...DEFAULTS, pulse: 0, fade: 0, glow: 0, beatMotion: 0 },
   Nebula: {
     ...DEFAULTS, length: 80, spacing: 6, detail: 20, particleSize: 2, sizeVar: 0.6,
     hueRange: 240, glow: 1.3, fade: 0.75, outline: false, dispersal: 1.8, autoRotate: 0.4,
@@ -57,6 +64,10 @@ export const PRESETS = {
   Tunnel: {
     ...DEFAULTS, length: 100, spacing: 40, detail: 12, particleSize: 4, hueRange: 360,
     hueSpeed: 2, fade: 0.6, glow: 0.9, pulse: 0.3,
+  },
+  Spectrum: {
+    ...DEFAULTS, mode: 'spectrum', length: 60, spacing: 8, detail: 19, particleSize: 3, sizeVar: 0.4,
+    dispersal: 1.4, hueRange: 200, glow: 1, fade: 0.65, pulse: 0.2, beatMotion: 0.5, outline: false,
   },
   Bloom: {
     ...DEFAULTS, length: 24, spacing: 12, detail: 14, particleSize: 8, sizeVar: 0.8,
@@ -72,6 +83,7 @@ export function sanitize(input) {
     const p = PARAMS[k];
     if (!p) continue;
     if (p.type === 'toggle') out[k] = v === true || v === '1' || v === 'true';
+    else if (p.type === 'choice') out[k] = p.options.some(([o]) => o === v) ? v : p.value;
     else if (Number.isFinite(Number(v))) out[k] = clamp(Number(v), p);
   }
   return out;
@@ -82,7 +94,9 @@ export function toHash(settings, track) {
   const q = new URLSearchParams();
   for (const [k, v] of Object.entries(settings)) {
     if (v === DEFAULTS[k]) continue;
-    q.set(k, typeof v === 'boolean' ? (v ? '1' : '0') : String(+v.toFixed(3)));
+    if (typeof v === 'boolean') q.set(k, v ? '1' : '0');
+    else if (typeof v === 'string') q.set(k, v);
+    else q.set(k, String(+v.toFixed(3)));
   }
   if (track?.shareId) q.set('t', track.shareId);
   const s = q.toString();

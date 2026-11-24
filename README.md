@@ -1,6 +1,6 @@
 # ring
 
-A 3D audio visualiser: every frame of the waveform becomes a ring of particles, and the last few seconds stretch into a tunnel you can orbit.
+A 3D audio visualiser: every frame of the sound becomes a ring of particles, and the last few seconds stretch into a tunnel you can orbit. Record clips of it to share.
 
 https://ring-umber.vercel.app/
 
@@ -8,26 +8,47 @@ https://ring-umber.vercel.app/
 
 ## Music sources
 
-- **Library**: the tracks in `public/audio`.
-- **Search**: any song in the Apple Music catalogue, as a 30-second preview (iTunes Search API, no key needed).
-- **Your files**: pick or drop any audio file. It never leaves the browser.
-- **Another tab**: share a Spotify, YouTube or Apple Music tab with “Share tab audio” on (Chrome and Edge on desktop).
-- **Microphone**: react to whatever is playing in the room.
+Everything starts from the search box (press `/`).
 
-Spotify and Apple Music full tracks are DRM-protected, so a browser can't analyse them directly. Tab sharing is the way to visualise them.
+- **Search**: any song in the Apple Music catalogue, as a 30-second preview (iTunes Search API, no key needed).
+- **Library**: the tracks in `public/audio` (128 kbps AAC).
+- **Your files**: pick or drop any audio file. It never leaves the browser.
+- **A browser tab**: share a YouTube, SoundCloud or web-player tab with “Share tab audio” on.
+- **Computer audio**: share “Entire screen” with “Share system audio” on, which covers desktop apps such as Spotify. Chrome 141+ on macOS 14.2+, Chrome or Edge on Windows.
+- **Microphone or input**: the room, or a loopback device such as [BlackHole](https://existential.audio/blackhole/) that carries the computer's sound without screen sharing.
+
+Browsers only allow capture straight from a click, so the capture request is made before anything else is awaited.
+
+### Spotify
+
+Spotify's audio is DRM-protected and can't be analysed by a web page, so ring listens to your computer's audio and uses the Spotify Web API for what's playing: track, artwork, play/pause/skip/seek and Spotify search.
+
+To turn it on:
+
+1. Create an app at https://developer.spotify.com/dashboard (the owner account needs Spotify Premium).
+2. Add redirect URIs `https://ring-umber.vercel.app/` and `http://127.0.0.1:5173/`, and enable the Web API.
+3. Set the client ID as `VITE_SPOTIFY_CLIENT_ID` (in Vercel, and in `.env.local` for development).
+4. Under User Management, add each Spotify account that should be able to connect.
+
+Development-mode apps allow at most 5 users and 10 search results. Spotify's developer policy doesn't allow its recordings in videos, so clips recorded while Spotify is the source are silent.
+
+## Recording
+
+Record (`V`) captures the canvas only, never the controls, with the audio feeding the ring. Frames: Screen, Square 1080×1080, Vertical 1080×1920, 1080p. Output is MP4 (H.264/AAC) where the browser supports it, WebM otherwise, at about 9 Mbps. Up to 10 minutes.
 
 ## Controls
 
-Tune panel (`T`) holds every visual parameter, six presets, Randomize (`R`) and Copy link, which encodes the current look and track in the URL.
+Tune panel (`T`): presets, waveform or spectrum mode (`S`), shape, particles, tunnel, colour, glow, beat motion, auto-rotate. Randomize (`R`) and Copy link, which saves the look and track in the URL.
 
 | Key | Action |
 | --- | --- |
+| / | Search |
 | Enter | Play or pause |
 | Space | Back to the start of the track |
 | ← → | Seek 5 seconds |
 | ↑ ↓ | Volume |
 | N / P | Next or previous track |
-| M | Music panel |
+| V | Start or stop recording |
 | H | Hide the interface |
 | F | Full screen |
 | ? | All shortcuts |
@@ -35,10 +56,11 @@ Tune panel (`T`) holds every visual parameter, six presets, Randomize (`R`) and 
 
 ## How it works
 
-- `src/audio.js`: Web Audio graph. An `<audio>` element (streamed, not decoded up front) or a `MediaStream` feeds one `AnalyserNode`. Analysis happens before the volume stage, so the ring still moves when muted.
-- `src/visualizer.js`: three.js. All particles are a single instanced draw call. Waveform history lives in a 1024×100 ring-buffer texture and the vertex shader places and colours every cube, so each frame uploads one 1 KB row. Bloom via `UnrealBloomPass`, and resolution scales down automatically if frames run long.
-- `src/settings.js`: parameters, presets, URL and localStorage state.
-- `src/main.js`: UI wiring, keyboard, media session, render loop.
+- `src/audio.js`: Web Audio graph. An `<audio>` element (streamed) or a `MediaStream` feeds one `AnalyserNode` and a recording tap, both before the volume stage. Also builds the mirrored log-scale spectrum and detects beats.
+- `src/visualizer.js`: three.js. All particles are one instanced draw call; waveform history lives in a ring-buffer texture and the vertex shader places and colours every cube. Bloom, beat motion, adaptive resolution, fixed-size rendering for recordings.
+- `src/recorder.js`: `MediaRecorder` over `canvas.captureStream()` plus the audio tap.
+- `src/spotify.js`: PKCE sign-in and Web API calls.
+- `src/settings.js`, `src/catalog.js`, `src/library.js`, `src/main.js`: parameters and presets, Apple Music search, the library, UI wiring.
 
 ## Develop
 

@@ -122,6 +122,10 @@ export class Visualizer {
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
 
+    this.fixedSize = null;
+    this.baseFov = this.camera.fov;
+    this.spin = 0;
+    this.punch = 0;
     this.layoutKey = '';
     this.frameMs = 16.7;
     this.lastDprChange = 0;
@@ -169,6 +173,24 @@ export class Visualizer {
     this.geometry.instanceCount = count;
   }
 
+  // On each beat: a spin impulse on the ring and a quick zoom punch.
+  _beatMotion(dt, beat) {
+    const amount = this.settings.beatMotion;
+    if (beat && amount > 0) {
+      this.spin += (Math.random() < 0.5 ? -1 : 1) * (0.6 + Math.random() * 0.6) * amount;
+      this.punch = Math.max(this.punch, 0.09 * amount);
+    }
+    if (Math.abs(this.spin) > 1e-4) {
+      this.mesh.rotation.z += this.spin * dt;
+      this.spin *= Math.exp(-dt * 2.5);
+    }
+    if (this.punch > 1e-4 || this.camera.fov !== this.baseFov) {
+      this.punch *= Math.exp(-dt * 7);
+      this.camera.fov = this.baseFov * (1 - this.punch);
+      this.camera.updateProjectionMatrix();
+    }
+  }
+
   get particleCount() {
     return this.geometry.instanceCount;
   }
@@ -198,17 +220,30 @@ export class Visualizer {
     this.fit();
   }
 
+  // Renders at an exact pixel size (for recording square / vertical clips);
+  // the canvas is letterboxed on screen. null returns to filling the window.
+  setFixedSize(size) {
+    this.fixedSize = size;
+    this.canvas.classList.toggle('framed', !!size);
+    if (size) this.canvas.style.setProperty('--ar', String(size[0] / size[1]));
+    else this.canvas.style.removeProperty('--ar');
+    this.userMoved = false;
+    this.resize();
+  }
+
   resize() {
-    const w = this.canvas.clientWidth;
-    const h = this.canvas.clientHeight;
+    const fixed = this.fixedSize;
+    const w = fixed ? fixed[0] : this.canvas.clientWidth;
+    const h = fixed ? fixed[1] : this.canvas.clientHeight;
+    const dpr = fixed ? 1 : this.dpr;
     this.width = w;
     this.height = h;
     if (!w || !h) return;
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
-    this.renderer.setPixelRatio(this.dpr);
+    this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(w, h, false);
-    this.composer.setPixelRatio(this.dpr);
+    this.composer.setPixelRatio(dpr);
     this.composer.setSize(w, h);
     if (!this.userMoved) this.fit();
   }
@@ -216,7 +251,7 @@ export class Visualizer {
   // Drops resolution when frames run long, and recovers when there's headroom.
   _adapt(dt, now) {
     // Ignore stalls and throttled background frames: they say nothing about render cost.
-    if (document.hidden || dt > 0.07) return;
+    if (document.hidden || dt > 0.07 || this.fixedSize || this.holdResolution) return;
     this.frameMs += (dt * 1000 - this.frameMs) * 0.05;
     if (now - this.lastDprChange < 2500) return;
     if (this.frameMs > 24 && this.dpr > 0.75) {
@@ -229,9 +264,10 @@ export class Visualizer {
   }
 
   // wave: Uint8Array to record this frame, or null to freeze the tunnel.
-  frame(dt, now, wave, bass) {
+  frame(dt, now, wave, bass, beat = false) {
     this._adapt(dt, now);
     dt = Math.min(dt, 0.1);
+    this._beatMotion(dt, beat);
     // Record at most 60 rings per second so the tunnel is the same length on 120 Hz screens.
     this.pushClock += dt;
     if (wave && this.pushClock >= 1 / 61) {

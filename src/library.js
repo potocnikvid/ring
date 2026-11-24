@@ -1,4 +1,4 @@
-// Tracks bundled with the site (public/audio). Order matches ring v1's song picker.
+// Tracks bundled with the site (public/audio), 128 kbps AAC. Order matches ring v1's song picker.
 const TRACKS = [
   ['baiana', 'Baiana'],
   ['carambolage', 'Carambolage'],
@@ -15,14 +15,14 @@ const TRACKS = [
   ['rumble', 'Rumble'],
   ['style', 'Style'],
   ['sunshine', 'Everybody loves the sunshine'],
-  ['tobogan', 'Tobogan'],
+  ['tobogan', 'Tobogan', 'mp3'],
 ];
 
-export const LIBRARY = TRACKS.map(([id, title]) => ({
+export const LIBRARY = TRACKS.map(([id, title, ext = 'm4a']) => ({
   kind: 'url',
   id,
   shareId: `lib:${id}`,
   title,
   subtitle: 'Ring library',
-  src: `/audio/${id}.mp3`,
+  src: `/audio/${id}.${ext}`,
 }));
