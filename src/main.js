@@ -1,5 +1,6 @@
 import '@fontsource-variable/inconsolata/wdth.css';
 import './style.css';
+import { inject } from '@vercel/analytics';
 import { AudioEngine, SAMPLES } from './audio.js';
 import { Visualizer } from './visualizer.js';
 import { DEFAULTS, GROUPS, PARAMS, PRESETS, fromHash, loadStored, sameValue, sanitize, store, toHash } from './settings.js';
@@ -11,6 +12,16 @@ import { FORMATS, MAX_SECONDS, Recorder, canRecord } from './recorder.js';
 import * as spotify from './spotify.js';
 import { MilkDrop } from './milkdrop.js';
 import { MILK_PRESETS } from './milkdrop-presets.js';
+
+// Vercel Web Analytics. Only the path is sent: the query string can hold a
+// Spotify sign-in code and the hash holds the shared style settings.
+inject({
+  mode: import.meta.env.DEV ? 'development' : 'production',
+  beforeSend: (event) => {
+    const url = new URL(event.url);
+    return { ...event, url: url.origin + url.pathname };
+  },
+});
 
 const $ = (id) => document.getElementById(id);
 const body = document.body;
